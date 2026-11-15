@@ -3,13 +3,13 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>WorldChill Earth — 3D / 2.5D Политическая карта</title>
+  <title>WorldChill Earth — 2.5D / 3D Ландшафт и Карта</title>
   <style>
     :root {
       --bg: #050914;
       --panel: rgba(11, 18, 34, 0.86);
       --panel-solid: #0d162a;
-      --border: rgba(148, 163, 184, 0.2);
+      --border: rgba(148, 163, 184, 0.22);
       --text: #e2e8f0;
       --muted: #94a3b8;
       --accent: #38bdf8;
@@ -20,18 +20,18 @@
     * { box-sizing: border-box; margin: 0; padding: 0; }
     html, body {
       width: 100%; height: 100%; overflow: hidden;
-      background: radial-gradient(circle at 50% 45%, #0c1730 0%, #050914 75%);
+      background: radial-gradient(circle at 50% 45%, #0c1730 0%, #050914 78%);
       color: var(--text);
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, Arial, sans-serif;
       user-select: none;
     }
-    canvas#globe, canvas#map {
+    canvas#glview, canvas#overlay {
       position: fixed; inset: 0; width: 100%; height: 100%;
       display: block;
     }
-    canvas#globe { z-index: 1; pointer-events: none; }
-    canvas#map { z-index: 2; cursor: grab; background: transparent; }
-    canvas#map.dragging { cursor: grabbing; }
+    canvas#glview { z-index: 1; pointer-events: none; }
+    canvas#overlay { z-index: 2; cursor: grab; background: transparent; }
+    canvas#overlay.dragging { cursor: grabbing; }
 
     /* Top bar */
     .topbar {
@@ -73,7 +73,7 @@
     }
     .mode-btn {
       border: none; background: transparent; color: var(--muted);
-      padding: 4px 9px; font-size: 12px; font-weight: 700; border-radius: 7px;
+      padding: 4px 10px; font-size: 12px; font-weight: 700; border-radius: 7px;
       cursor: pointer; transition: 0.16s ease;
     }
     .mode-btn:hover { color: var(--text); }
@@ -185,10 +185,10 @@
       pointer-events: auto;
       background: var(--panel); backdrop-filter: blur(12px);
       border: 1px solid var(--border); border-radius: 10px;
-      padding: 7px 12px; font-size: 12px; display: flex; align-items: center; gap: 12px;
+      padding: 7px 12px; font-size: 12px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
       box-shadow: 0 8px 24px rgba(0,0,0,0.45);
     }
-    .zoom-controls { display: flex; gap: 5px; align-items: center; }
+    .zoom-controls { display: flex; gap: 5px; align-items: center; flex-wrap: wrap; }
     @media (max-width: 780px) {
       .sidebar { width: calc(100% - 24px); max-height: 44%; bottom: 56px; top: auto; }
       .dossier { width: calc(100% - 24px); top: 68px; max-height: 45%; }
@@ -196,8 +196,8 @@
   </style>
 </head>
 <body>
-  <canvas id="globe"></canvas>
-  <canvas id="map"></canvas>
+  <canvas id="glview"></canvas>
+  <canvas id="overlay"></canvas>
 
   <div class="topbar">
     <div class="bar-group">
@@ -205,8 +205,8 @@
       <div class="brand">🌍 WorldChill Earth</div>
       <div class="mode-switch" title="Режим отображения карты">
         <button class="mode-btn" data-view="2d">2D</button>
-        <button class="mode-btn" data-view="25d">2.5D</button>
-        <button class="mode-btn active" data-view="3d">🌐 3D</button>
+        <button class="mode-btn active" data-view="25d">⛰ 2.5D</button>
+        <button class="mode-btn" data-view="3d">🌐 3D</button>
       </div>
       <div class="live-pill">
         <span class="live-dot" id="liveDot"></span>
@@ -215,8 +215,9 @@
     </div>
 
     <div class="bar-group">
+      <button class="btn active" data-layer="territories">Страны</button>
       <button class="btn active" data-layer="borders">Границы</button>
-      <button class="btn active" data-layer="diplomacy">Союзы и торговля</button>
+      <button class="btn active" data-layer="diplomacy">Дипломатия</button>
       <button class="btn active" data-layer="capitals">Столицы</button>
       <button class="btn active" data-layer="players">Игроки</button>
       <button class="btn" data-layer="grid">Сетка чанков</button>
@@ -264,12 +265,16 @@
     <div class="hud-box" id="hoverHud">
       <span id="hoverCoords">Наведите курсор на карту Земли</span>
       <span id="hoverOwner" style="font-weight:600"></span>
+      <span id="tileStats" style="color:#7dd3fc;font-size:11px;"></span>
       <span id="viewHint" style="color:var(--muted);font-size:11px;"></span>
     </div>
     <div class="hud-box zoom-controls">
       <button class="btn" id="spinBtn" style="display:none" title="Автовращение глобуса">⟳ Крутить</button>
-      <button class="btn" id="rotLeftBtn" style="display:none" title="Повернуть карту влево">⟲</button>
-      <button class="btn" id="rotRightBtn" style="display:none" title="Повернуть карту вправо">⟳</button>
+      <button class="btn" id="tiltDownBtn" title="Ниже к горизонту (3D)">∠−</button>
+      <button class="btn" id="tiltUpBtn" title="Выше (сверху)">∠+</button>
+      <button class="btn" id="rotLeftBtn" title="Повернуть камеру влево">⟲</button>
+      <button class="btn" id="rotRightBtn" title="Повернуть камеру вправо">⟳</button>
+      <button class="btn" id="reliefBtn" title="Высота 3D рельефа гор и построек">⛰ ×1.5</button>
       <button class="btn" id="zoomOutBtn">−</button>
       <span id="zoomLabel" style="min-width:44px;text-align:center;color:var(--muted)">100%</span>
       <button class="btn" id="zoomInBtn">+</button>
@@ -279,52 +284,74 @@
   <script>
     const WORLD_W = 768;
     const WORLD_H = 384;
-    const TERRAIN_NAMES = [
-      "Глубокий океан",
-      "Вода / побережье",
-      "Снег / льды",
-      "Лес / джунгли",
-      "Пустыня / степь",
-      "Суша / равнина",
-      "За границей карты"
-    ];
-
-    const globeCanvas = document.getElementById("globe");
-    const canvas = document.getElementById("map");
-    const ctx = canvas.getContext("2d");
-
+    const MIN_CX = -384;
+    const MIN_CZ = -192;
+    const MAX_CX = 383;
+    const MAX_CZ = 191;
+    const REGION_CHUNKS = 32;
+    const TILE_PX_PER_CHUNK = 8;
+    const TILE_SIZE = REGION_CHUNKS * TILE_PX_PER_CHUNK; // 256
     const DEFAULT_GIST_ID = "6c8f6446cb803cd6d773559fb5a3e13b";
+    const SEA_NORM = 72 / 255;
+
     const urlParams = new URLSearchParams(window.location.search);
     const paramGist = (urlParams.get("gist") || "").trim();
+    let gistId = paramGist || localStorage.getItem("worldchill_gist_id") || DEFAULT_GIST_ID;
     if (paramGist) {
-      try { localStorage.setItem("worldchill_gist_id", paramGist); } catch (_) {}
+      localStorage.setItem("worldchill_gist_id", paramGist);
     }
-    let storedGist = "";
-    try { storedGist = (localStorage.getItem("worldchill_gist_id") || "").trim(); } catch (_) {}
-    let gistId = paramGist || DEFAULT_GIST_ID || (location.hostname.endsWith("github.io") ? storedGist : "");
-    let isGistMode = gistId.length > 0 || location.hostname.endsWith("github.io") || location.protocol === "file:";
-    let lastGistEtag = null;
-    let gistRawFallbackUntil = 0;
+    const IS_GIST_HOST = window.location.protocol !== "file:" && (
+      Boolean(gistId) ||
+      window.location.hostname.endsWith("github.io") ||
+      window.location.hostname.includes("pages.dev") ||
+      window.location.hostname.includes("netlify.app") ||
+      window.location.hostname.includes("vercel.app")
+    );
 
-    let terrainImg = new Image();
-    terrainImg.crossOrigin = "anonymous";
-    let terrainReady = false;
+    const glCanvas = document.getElementById("glview");
+    const ovCanvas = document.getElementById("overlay");
+    const ovCtx = ovCanvas.getContext("2d");
+
+    let viewMode = localStorage.getItem("worldchill_view_mode") || "25d";
+    if (!["2d", "25d", "3d"].includes(viewMode)) viewMode = "25d";
+
+    let state = { refreshMs: 2000, gistPollMs: 20000, showPlayers: true, countries: [], players: [], chronicle: [], tiles: [] };
     let biomeBytes = null;
-    let state = null;
-    let ownerGrid = null;
-    let countryMap = new Map();
-    let capitalMap = new Map();
-    let countryHeights = new Map();
+    let baseThumbImg = null;
+    let chunkOwnerMap = new Map();
+    let countryById = new Map();
     let selectedCountryId = null;
-    let hoveredCountryId = null;
+    let hoveredChunk = null;
     let activeTab = "countries";
     let paused = false;
+    let lastGistEtag = "";
+    let lastGistFiles = null;
     let pollTimer = null;
 
-    let viewMode = "3d"; // "2d" | "25d" | "3d"
-    let webglReady = false;
+    // Live Minecraft region tiles cache: key "rx_rz" -> { version, loading, colorImg, heightImg, colorCanvas }
+    const tileCache = new Map();
+    let loadedTileCount = 0;
+
+    // Terrain synthesis buffers (resolution adapts up to 4096x2048 for WebGL, clamped cleanly)
+    let TEX_W = 2048;
+    let TEX_H = 1024;
+    const synthColorCanvas = document.createElement("canvas");
+    const synthHeightCanvas = document.createElement("canvas");
+    const countryOverlayCanvas = document.createElement("canvas");
+    countryOverlayCanvas.width = WORLD_W;
+    countryOverlayCanvas.height = WORLD_H;
+    const countryOverlayCtx = countryOverlayCanvas.getContext("2d");
+    let synthColorCtx = null;
+    let synthHeightCtx = null;
+
+    // Precomputed 2D hillshaded base image (768x384 -> crisp + tiles overlay in 2D)
+    const hill2dCanvas = document.createElement("canvas");
+    hill2dCanvas.width = WORLD_W * 2;
+    hill2dCanvas.height = WORLD_H * 2;
+    const hill2dCtx = hill2dCanvas.getContext("2d");
 
     const layers = {
+      territories: true,
       borders: true,
       diplomacy: true,
       capitals: true,
@@ -332,1944 +359,1841 @@
       grid: false
     };
 
-    const cam = {
-      x: 384,
-      z: 192,
-      scale: 2.0,
-      yaw25: -0.48,
-      tilt25: 0.78, // cos/squash factor: lower = flatter perspective tilt
-      anim: null
+    // Camera state for 2D
+    const cam2d = { cx: 36, cz: -46, zoom: 3.4, targetCx: 36, targetCz: -46, targetZoom: 3.4 };
+
+    // Camera state for 2.5D terrain mesh (wx = cx, wz = cz in chunk units)
+    const cam25 = {
+      cx: 36, cz: -46, zoom: 2.3, yaw: -0.26, pitch: 0.78,
+      targetCx: 36, targetCz: -46, targetZoom: 2.3, targetYaw: -0.26, targetPitch: 0.78
     };
 
-    const globe = {
-      yaw: 0.45,
-      pitch: 0.42,
-      dist: 2.55,
-      autoSpin: true,
-      anim: null
+    // Camera state for 3D relief globe
+    const cam3d = {
+      yaw: 0.42, pitch: 0.46, zoom: 1.32,
+      targetYaw: 0.42, targetPitch: 0.46, targetZoom: 1.32,
+      autoSpin: true
     };
 
-    // Pre-generated background starfield for 2.5D & WebGL fallback
-    const bgStars = Array.from({ length: 160 }, (_, i) => ({
-      rx: ((Math.sin(i * 127.1 + 1.3) * 43758.5453) % 1 + 1) % 1,
-      ry: ((Math.sin(i * 311.7 + 7.9) * 24634.6345) % 1 + 1) % 1,
-      size: (i % 5 === 0) ? 1.8 : 1.0,
-      alpha: 0.25 + ((i * 17) % 60) / 100
+    const reliefSteps = [0.8, 1.5, 2.4, 3.6];
+    let reliefIndex = 1;
+    let reliefMult = reliefSteps[reliefIndex];
+
+    // Background starfield
+    const stars = Array.from({ length: 240 }, (_, i) => ({
+      x: ((i * 73856093) % 10000) / 10000,
+      y: ((i * 19349663) % 10000) / 10000,
+      r: 0.55 + ((i * 83492791) % 100) / 70,
+      a: 0.2 + ((i * 49979687) % 100) / 160,
+      tw: (i % 19) * 0.35
     }));
 
-    // Dynamic RGBA overlay texture for WebGL globe countries
-    const countryTexCanvas = document.createElement("canvas");
-    countryTexCanvas.width = WORLD_W;
-    countryTexCanvas.height = WORLD_H;
-    const countryTexCtx = countryTexCanvas.getContext("2d");
-    let countryTexDirty = true;
-    let globeAnimLoopId = null;
+    // Cached current 2.5D MVP matrix & viewport dims for exact 2D label/border projection
+    let last25View = null;
 
-    // WebGL context & shader handles
-    let gl = null;
-    let glProg = null;
-    let glTerrainTex = null;
-    let glBiomeTex = null;
-    let glCountryTex = null;
-    let glLocs = {};
-    let glNeedsBiomeUpload = false;
-    let glNeedsTerrainUpload = false;
+    let dpr = 1;
+    function resize() {
+      dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      glCanvas.width = Math.floor(w * dpr);
+      glCanvas.height = Math.floor(h * dpr);
+      glCanvas.style.width = w + "px";
+      glCanvas.style.height = h + "px";
+      ovCanvas.width = Math.floor(w * dpr);
+      ovCanvas.height = Math.floor(h * dpr);
+      ovCanvas.style.width = w + "px";
+      ovCanvas.style.height = h + "px";
+    }
+    window.addEventListener("resize", resize);
+    resize();
 
-    function esc(str) {
-      if (str === null || str === undefined) return "";
-      return String(str)
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;")
-        .replace(/'/g, "&#39;");
+    // ---------------- Math Utilities (4x4 Matrix & Vec3) ----------------
+    function mat4Identity() {
+      return new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]);
+    }
+    function mat4Mul(a, b) {
+      const out = new Float32Array(16);
+      for (let c = 0; c < 4; c++) {
+        for (let r = 0; r < 4; r++) {
+          out[c * 4 + r] =
+            a[0 * 4 + r] * b[c * 4 + 0] +
+            a[1 * 4 + r] * b[c * 4 + 1] +
+            a[2 * 4 + r] * b[c * 4 + 2] +
+            a[3 * 4 + r] * b[c * 4 + 3];
+        }
+      }
+      return out;
+    }
+    function mat4Perspective(fovY, aspect, near, far) {
+      const f = 1 / Math.tan(fovY / 2);
+      const nf = 1 / (near - far);
+      const m = new Float32Array(16);
+      m[0] = f / aspect;
+      m[5] = f;
+      m[10] = (far + near) * nf;
+      m[11] = -1;
+      m[14] = 2 * far * near * nf;
+      return m;
+    }
+    function mat4LookAt(eye, target, up) {
+      let zx = eye[0] - target[0], zy = eye[1] - target[1], zz = eye[2] - target[2];
+      let zLen = Math.hypot(zx, zy, zz) || 1;
+      zx /= zLen; zy /= zLen; zz /= zLen;
+
+      let xx = up[1] * zz - up[2] * zy;
+      let xy = up[2] * zx - up[0] * zz;
+      let xz = up[0] * zy - up[1] * zx;
+      let xLen = Math.hypot(xx, xy, xz) || 1;
+      xx /= xLen; xy /= xLen; xz /= xLen;
+
+      const yx = zy * xz - zz * xy;
+      const yy = zz * xx - zx * xz;
+      const yz = zx * xy - zy * xx;
+
+      const m = mat4Identity();
+      m[0] = xx; m[4] = xy; m[8] = xz;
+      m[1] = yx; m[5] = yy; m[9] = yz;
+      m[2] = zx; m[6] = zy; m[10] = zz;
+      m[12] = -(xx * eye[0] + xy * eye[1] + xz * eye[2]);
+      m[13] = -(yx * eye[0] + yy * eye[1] + yz * eye[2]);
+      m[14] = -(zx * eye[0] + zy * eye[1] + zz * eye[2]);
+      return m;
+    }
+    function projectPointMat4(mvp, wx, wy, wz, cssW, cssH) {
+      const cx = mvp[0] * wx + mvp[4] * wy + mvp[8] * wz + mvp[12];
+      const cy = mvp[1] * wx + mvp[5] * wy + mvp[9] * wz + mvp[13];
+      const cz = mvp[2] * wx + mvp[6] * wy + mvp[10] * wz + mvp[14];
+      const cw = mvp[3] * wx + mvp[7] * wy + mvp[11] * wz + mvp[15];
+      if (cw <= 0.05) return null;
+      const ndcX = cx / cw;
+      const ndcY = cy / cw;
+      const ndcZ = cz / cw;
+      if (ndcZ < -1.1 || ndcZ > 1.1) return null;
+      return {
+        x: (ndcX * 0.5 + 0.5) * cssW,
+        y: (0.5 - ndcY * 0.5) * cssH,
+        depth: cw
+      };
     }
 
-    function fmt(num) {
-      if (num === null || num === undefined || Number.isNaN(num)) return "0";
-      const n = Number(num);
-      return Math.abs(n - Math.round(n)) < 0.005 ? Math.round(n).toLocaleString("ru-RU") : n.toFixed(2);
+    // ---------------- WebGL Setup (2.5D Terrain Mesh + 3D Relief Globe) ----------------
+    const gl = glCanvas.getContext("webgl", { alpha: true, antialias: true, preserveDrawingBuffer: false });
+    let glReady = false;
+    let progTerrain25 = null;
+    let progGlobe3 = null;
+    let meshTerrain25 = null;
+    let meshGlobe3 = null;
+    let texColor = null;
+    let texHeight = null;
+    let texCountry = null;
+
+    function compileShader(type, src) {
+      const s = gl.createShader(type);
+      gl.shaderSource(s, src);
+      gl.compileShader(s);
+      if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+        console.warn("Shader error:", gl.getShaderInfoLog(s));
+        return null;
+      }
+      return s;
+    }
+    function linkProgram(vsSrc, fsSrc) {
+      const vs = compileShader(gl.VERTEX_SHADER, vsSrc);
+      const fs = compileShader(gl.FRAGMENT_SHADER, fsSrc);
+      if (!vs || !fs) return null;
+      const p = gl.createProgram();
+      gl.attachShader(p, vs);
+      gl.attachShader(p, fs);
+      gl.linkProgram(p);
+      if (!gl.getProgramParameter(p, gl.LINK_STATUS)) {
+        console.warn("Program link error:", gl.getProgramInfoLog(p));
+        return null;
+      }
+      return p;
     }
 
-    function hexToRgb(hex) {
-      const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex || "#38bdf8");
-      if (!m) return [56, 189, 248];
-      return [parseInt(m[1], 16), parseInt(m[2], 16), parseInt(m[3], 16)];
-    }
-
-    function hexToRgba(hex, alpha) {
-      const [r, g, b] = hexToRgb(hex);
-      return `rgba(${r},${g},${b},${alpha})`;
-    }
-
-    function shadeHex(hex, factor) {
-      const [r, g, b] = hexToRgb(hex);
-      const cl = v => Math.max(0, Math.min(255, Math.round(v)));
-      return `rgb(${cl(r * factor)},${cl(g * factor)},${cl(b * factor)})`;
-    }
-
-    function clamp(v, min, max) {
-      return Math.max(min, Math.min(max, v));
-    }
-
-    function wrapLonRad(a) {
-      while (a > Math.PI) a -= Math.PI * 2;
-      while (a < -Math.PI) a += Math.PI * 2;
-      return a;
-    }
-
-    // ---------------- WebGL 3D Globe Setup ----------------
     function initWebGL() {
+      if (!gl) return;
+      const maxTex = gl.getParameter(gl.MAX_TEXTURE_SIZE) || 2048;
+      if (maxTex >= 4096) {
+        TEX_W = 4096;
+        TEX_H = 2048;
+      } else {
+        TEX_W = 2048;
+        TEX_H = 1024;
+      }
+      synthColorCanvas.width = TEX_W;
+      synthColorCanvas.height = TEX_H;
+      synthHeightCanvas.width = TEX_W;
+      synthHeightCanvas.height = TEX_H;
+      synthColorCtx = synthColorCanvas.getContext("2d");
+      synthHeightCtx = synthHeightCanvas.getContext("2d");
+
+      // Program 1: 2.5D Displaced Landscape Mesh
+      const vs25 = `
+        attribute vec2 aGrid;
+        uniform mat4 uMvp;
+        uniform sampler2D uHeightTex;
+        uniform vec2 uCenter;
+        uniform vec2 uSpan;
+        uniform float uReliefScale;
+        uniform float uSeaNorm;
+        varying vec2 vUv;
+        varying float vRawH;
+        varying vec3 vWorldPos;
+        void main() {
+          float wx = uCenter.x + (aGrid.x - 0.5) * uSpan.x;
+          float wz = uCenter.y + (aGrid.y - 0.5) * uSpan.y;
+          vec2 uv = vec2((wx + 384.0) / 768.0, (wz + 192.0) / 384.0);
+          vec2 clampedUv = clamp(uv, vec2(0.0005), vec2(0.9995));
+          float rawH = texture2D(uHeightTex, clampedUv).r;
+          float inBounds = step(0.0, uv.x) * step(uv.x, 1.0) * step(0.0, uv.y) * step(uv.y, 1.0);
+          float wy = 0.0;
+          if (rawH > uSeaNorm) {
+            wy = (rawH - uSeaNorm) * uReliefScale * inBounds;
+          } else {
+            // Keep water surface flat at wy = 0, slight dip below world edges
+            wy = mix(-1.2, 0.0, inBounds);
+          }
+          vUv = uv;
+          vRawH = rawH;
+          vWorldPos = vec3(wx, wy, wz);
+          gl_Position = uMvp * vec4(wx, wy, wz, 1.0);
+        }
+      `;
+      const fs25 = `
+        precision highp float;
+        uniform sampler2D uColorTex;
+        uniform sampler2D uHeightTex;
+        uniform sampler2D uCountryTex;
+        uniform vec3 uCamPos;
+        uniform float uReliefScale;
+        uniform float uSeaNorm;
+        uniform float uShowCountries;
+        uniform float uShowBorders;
+        uniform float uShowGrid;
+        uniform float uTime;
+        varying vec2 vUv;
+        varying float vRawH;
+        varying vec3 vWorldPos;
+        void main() {
+          if (vUv.x < 0.0 || vUv.x > 1.0 || vUv.y < 0.0 || vUv.y > 1.0) {
+            discard;
+          }
+          vec3 albedo = texture2D(uColorTex, vUv).rgb;
+          float hc = texture2D(uHeightTex, vUv).r;
+          vec2 stepUv = vec2(1.0 / 1536.0, 1.0 / 768.0);
+          float hxL = texture2D(uHeightTex, clamp(vUv - vec2(stepUv.x, 0.0), 0.0005, 0.9995)).r;
+          float hxR = texture2D(uHeightTex, clamp(vUv + vec2(stepUv.x, 0.0), 0.0005, 0.9995)).r;
+          float hzU = texture2D(uHeightTex, clamp(vUv - vec2(0.0, stepUv.y), 0.0005, 0.9995)).r;
+          float hzD = texture2D(uHeightTex, clamp(vUv + vec2(0.0, stepUv.y), 0.0005, 0.9995)).r;
+
+          float slopeScale = (hc > uSeaNorm) ? (uReliefScale * 1.35) : (uReliefScale * 0.25);
+          vec3 N = normalize(vec3((hxL - hxR) * slopeScale, 1.0, (hzU - hzD) * slopeScale));
+          vec3 L = normalize(vec3(-0.62, 0.72, -0.32));
+          vec3 V = normalize(uCamPos - vWorldPos);
+
+          float ndl = max(dot(N, L), 0.0);
+          float backLight = max(dot(N, normalize(vec3(0.5, 0.4, 0.6))), 0.0);
+          vec3 lit = albedo * (0.42 + 0.74 * ndl + 0.14 * backLight);
+
+          // Water depth shimmer & specular sun reflection
+          if (hc <= uSeaNorm + 0.006) {
+            vec3 H = normalize(L + V);
+            float wave = sin(vWorldPos.x * 1.4 + uTime * 1.5) * cos(vWorldPos.z * 1.4 - uTime * 1.2) * 0.015;
+            vec3 wN = normalize(vec3(wave, 1.0, wave));
+            float spec = pow(max(dot(wN, H), 0.0), 42.0);
+            float fresnel = pow(1.0 - max(dot(wN, V), 0.0), 3.0);
+            float shoreFoam = smoothstep(uSeaNorm - 0.022, uSeaNorm + 0.002, hc);
+            lit = mix(lit, vec3(0.32, 0.68, 0.88), shoreFoam * 0.25);
+            lit += vec3(0.45, 0.76, 1.0) * (spec * 0.42 + fresnel * 0.16);
+          } else {
+            // Subtle valley ambient occlusion & sunlit mountain ridge highlight
+            float ridge = clamp((hc - uSeaNorm) * 1.8, 0.0, 1.0);
+            lit *= mix(0.92, 1.08, ridge);
+          }
+
+          // Country overlay & crisp territory borders on 3D terrain
+          vec4 cSample = texture2D(uCountryTex, vUv);
+          if (cSample.a > 0.01) {
+            float isBorder = step(0.85, cSample.a);
+            if (isBorder > 0.5 && uShowBorders > 0.5) {
+              lit = mix(lit, cSample.rgb * 1.25 + vec3(0.1), 0.9);
+            } else if (uShowCountries > 0.5) {
+              lit = mix(lit, cSample.rgb, 0.34);
+            }
+          }
+
+          // Optional chunk grid lines (16-block grid)
+          if (uShowGrid > 0.5) {
+            vec2 ch = vec2(vUv.x * 768.0, vUv.y * 384.0);
+            vec2 gDist = abs(fract(ch) - 0.5);
+            float line = max(step(0.46, gDist.x), step(0.46, gDist.y));
+            lit = mix(lit, vec3(0.55, 0.75, 0.95), line * 0.22);
+          }
+
+          // Subtle atmospheric distance fog near horizon
+          float camDist = length(uCamPos - vWorldPos);
+          float fog = smoothstep(260.0, 720.0, camDist);
+          vec3 skyFog = vec3(0.04, 0.08, 0.18);
+          lit = mix(lit, skyFog, fog * 0.62);
+
+          gl_FragColor = vec4(lit, 1.0);
+        }
+      `;
+      progTerrain25 = linkProgram(vs25, fs25);
+
+      // Program 2: 3D Relief Globe
+      const vs3 = `
+        attribute vec3 aPos;
+        attribute vec2 aUv;
+        uniform mat4 uRot;
+        uniform float uZoom;
+        uniform float uAspect;
+        uniform sampler2D uHeightTex;
+        uniform float uReliefScale;
+        uniform float uSeaNorm;
+        varying vec3 vNormal;
+        varying vec2 vUv;
+        varying float vRawH;
+        varying vec3 vViewPos;
+        void main() {
+          float rawH = texture2D(uHeightTex, aUv).r;
+          float disp = max(0.0, rawH - uSeaNorm) * 0.048 * uReliefScale;
+          vec3 displaced = aPos * (1.0 + disp);
+          vec4 rotPos = uRot * vec4(displaced, 1.0);
+          vNormal = normalize((uRot * vec4(aPos, 0.0)).xyz);
+          vUv = aUv;
+          vRawH = rawH;
+          vViewPos = rotPos.xyz;
+          float z = rotPos.z - 2.95 / uZoom;
+          gl_Position = vec4(rotPos.x * (1.72 / uAspect), rotPos.y * 1.72, -z * 0.12 - 0.35, -z);
+        }
+      `;
+      const fs3 = `
+        precision highp float;
+        uniform sampler2D uColorTex;
+        uniform sampler2D uHeightTex;
+        uniform sampler2D uCountryTex;
+        uniform float uReliefScale;
+        uniform float uSeaNorm;
+        uniform float uShowCountries;
+        uniform float uShowBorders;
+        uniform float uTime;
+        varying vec3 vNormal;
+        varying vec2 vUv;
+        varying float vRawH;
+        varying vec3 vViewPos;
+        void main() {
+          vec3 N = normalize(vNormal);
+          vec3 albedo = texture2D(uColorTex, vUv).rgb;
+          vec2 stepUv = vec2(1.0 / 1536.0, 1.0 / 768.0);
+          float hxL = texture2D(uHeightTex, vec2(fract(vUv.x - stepUv.x), clamp(vUv.y, 0.001, 0.999))).r;
+          float hxR = texture2D(uHeightTex, vec2(fract(vUv.x + stepUv.x), clamp(vUv.y, 0.001, 0.999))).r;
+          float hyU = texture2D(uHeightTex, vec2(vUv.x, clamp(vUv.y - stepUv.y, 0.001, 0.999))).r;
+          float hyD = texture2D(uHeightTex, vec2(vUv.x, clamp(vUv.y + stepUv.y, 0.001, 0.999))).r;
+
+          vec3 upApprox = abs(N.y) < 0.98 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);
+          vec3 T = normalize(cross(upApprox, N));
+          vec3 B = normalize(cross(N, T));
+          float bumpK = (vRawH > uSeaNorm) ? (uReliefScale * 3.8) : 0.4;
+          vec3 bumpedN = normalize(N + T * (hxL - hxR) * bumpK + B * (hyD - hyU) * bumpK);
+
+          vec3 L = normalize(vec3(-0.62, 0.56, 0.64));
+          vec3 V = vec3(0.0, 0.0, 1.0);
+          float diff = max(dot(bumpedN, L), 0.0);
+          float rim = pow(1.0 - max(dot(N, V), 0.0), 3.1);
+
+          vec3 lit = albedo * (0.28 + 0.88 * diff);
+          if (vRawH <= uSeaNorm + 0.006) {
+            vec3 H = normalize(L + V);
+            float spec = pow(max(dot(bumpedN, H), 0.0), 36.0);
+            lit += vec3(0.32, 0.68, 0.98) * (spec * 0.42 + rim * 0.16);
+          }
+          vec4 cSample = texture2D(uCountryTex, vUv);
+          if (cSample.a > 0.01) {
+            float isBorder = step(0.85, cSample.a);
+            if (isBorder > 0.5 && uShowBorders > 0.5) {
+              lit = mix(lit, cSample.rgb * 1.25 + vec3(0.1), 0.9);
+            } else if (uShowCountries > 0.5) {
+              lit = mix(lit, cSample.rgb, 0.35);
+            }
+          }
+          lit += vec3(0.24, 0.64, 1.0) * rim * 0.48;
+          gl_FragColor = vec4(lit, 1.0);
+        }
+      `;
+      progGlobe3 = linkProgram(vs3, fs3);
+
+      if (!progTerrain25 || !progGlobe3) return;
+
+      // Build 2.5D grid mesh (224 x 140 vertices -> ~62k tris)
+      const cols = 224, rows = 140;
+      const gVerts = [];
+      const gIdx = [];
+      for (let z = 0; z <= rows; z++) {
+        for (let x = 0; x <= cols; x++) {
+          gVerts.push(x / cols, z / rows);
+        }
+      }
+      for (let z = 0; z < rows; z++) {
+        for (let x = 0; x < cols; x++) {
+          const i0 = z * (cols + 1) + x;
+          const i1 = i0 + 1;
+          const i2 = i0 + cols + 1;
+          const i3 = i2 + 1;
+          gIdx.push(i0, i2, i1, i1, i2, i3);
+        }
+      }
+      const vb25 = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, vb25);
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(gVerts), gl.STATIC_DRAW);
+      const ib25 = gl.createBuffer();
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ib25);
+      gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(gIdx), gl.STATIC_DRAW);
+      meshTerrain25 = { vb: vb25, ib: ib25, count: gIdx.length };
+
+      // Build 3D relief globe sphere (256 x 128 -> <= 65535 vertices? Wait: 257*129=33153 < 65536 -> fits Uint16!)
+      const segU = 224, segV = 112;
+      const sPos = [];
+      const sUv = [];
+      const sIdx = [];
+      for (let iv = 0; iv <= segV; iv++) {
+        const v = iv / segV;
+        const phi = (0.5 - v) * Math.PI;
+        const cp = Math.cos(phi), sp = Math.sin(phi);
+        for (let iu = 0; iu <= segU; iu++) {
+          const u = iu / segU;
+          const lam = (u - 0.5) * Math.PI * 2;
+          sPos.push(cp * Math.sin(lam), sp, cp * Math.cos(lam));
+          sUv.push(u, v);
+        }
+      }
+      for (let iv = 0; iv < segV; iv++) {
+        for (let iu = 0; iu < segU; iu++) {
+          const a = iv * (segU + 1) + iu;
+          const b = a + 1;
+          const c = a + segU + 1;
+          const d = c + 1;
+          sIdx.push(a, c, b, b, c, d);
+        }
+      }
+      const pBuf = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, pBuf);
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(sPos), gl.STATIC_DRAW);
+      const uBuf = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, uBuf);
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(sUv), gl.STATIC_DRAW);
+      const iBuf3 = gl.createBuffer();
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, iBuf3);
+      gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(sIdx), gl.STATIC_DRAW);
+      meshGlobe3 = { pBuf, uBuf, iBuf: iBuf3, count: sIdx.length };
+
+      texColor = createDynamicTexture();
+      texHeight = createDynamicTexture();
+      texCountry = createDynamicTexture();
+      glReady = true;
+    }
+
+    function createDynamicTexture() {
+      const t = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, t);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      const empty = new Uint8Array([14, 24, 48, 255]);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, empty);
+      return t;
+    }
+
+    function uploadTexture(tex, canvas) {
+      if (!glReady || !tex) return;
+      gl.bindTexture(gl.TEXTURE_2D, tex);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, canvas);
+    }
+
+    initWebGL();
+
+    // ---------------- Procedural Earth Relief + Real .mca Tile Compositor ----------------
+    function hash2(x, y) {
+      const n = Math.sin(x * 127.1 + y * 311.7) * 43758.5453123;
+      return n - Math.floor(n);
+    }
+    function valueNoise(x, y) {
+      const ix = Math.floor(x), iy = Math.floor(y);
+      const fx = x - ix, fy = y - iy;
+      const ux = fx * fx * (3 - 2 * fx);
+      const uy = fy * fy * (3 - 2 * fy);
+      const a = hash2(ix, iy);
+      const b = hash2(ix + 1, iy);
+      const c = hash2(ix, iy + 1);
+      const d = hash2(ix + 1, iy + 1);
+      return a + (b - a) * ux + (c - a) * uy + (a - b - c + d) * ux * uy;
+    }
+    function fbm(x, y) {
+      let val = 0, amp = 0.5, freq = 1;
+      for (let i = 0; i < 4; i++) {
+        val += amp * valueNoise(x * freq, y * freq);
+        freq *= 2.04;
+        amp *= 0.5;
+      }
+      return val;
+    }
+    function ridgeNoise(x, y) {
+      let val = 0, amp = 0.55, freq = 1;
+      for (let i = 0; i < 4; i++) {
+        const n = 1 - Math.abs(valueNoise(x * freq, y * freq) * 2 - 1);
+        val += amp * n * n;
+        freq *= 2.15;
+        amp *= 0.5;
+      }
+      return val;
+    }
+
+    function biomeAtGrid(gx, gz) {
+      if (!biomeBytes) return 0;
+      const cx = Math.max(0, Math.min(WORLD_W - 1, gx));
+      const cz = Math.max(0, Math.min(WORLD_H - 1, gz));
+      return biomeBytes[cz * WORLD_W + cx];
+    }
+
+    function rebuildBaseTerrain() {
+      if (!synthColorCtx || !synthHeightCtx) return;
+
+      // Build intermediate 768x384 detailed elevation + color arrays, then composite onto WebGL + 2D hillshade
+      const cw = WORLD_W, ch = WORLD_H;
+      const cImg = new ImageData(cw, ch);
+      const hImg = new ImageData(cw, ch);
+      const cData = cImg.data;
+      const hData = hImg.data;
+
+      // Sample baseThumbImg (128x64) pixels if present
+      let thumbPixels = null;
+      if (baseThumbImg) {
+        const tc = document.createElement("canvas");
+        tc.width = cw;
+        tc.height = ch;
+        const tctx = tc.getContext("2d");
+        tctx.imageSmoothingEnabled = true;
+        tctx.drawImage(baseThumbImg, 0, 0, cw, ch);
+        thumbPixels = tctx.getImageData(0, 0, cw, ch).data;
+      }
+
+      const rawElev = new Float32Array(cw * ch);
+
+      for (let z = 0; z < ch; z++) {
+        for (let x = 0; x < cw; x++) {
+          const i = z * cw + x;
+          const b = biomeAtGrid(x, z);
+          const n1 = fbm(x * 0.045, z * 0.045);
+          const r1 = ridgeNoise(x * 0.055 + 11.3, z * 0.055 + 7.1);
+
+          // Local inland factor (how many of 4 neighbors at radius 4 are land)
+          let inland = 0;
+          if (b >= 2) {
+            for (const [dx, dz] of [[3,0],[-3,0],[0,3],[0,-3],[7,0],[-7,0],[0,7],[0,-7]]) {
+              if (biomeAtGrid(x + dx, z + dz) >= 2) inland++;
+            }
+          }
+
+          let elev = 72; // sea level
+          let r = 20, g = 55, bl = 96;
+
+          if (b === 0) { // DEEP_WATER
+            elev = 14 + n1 * 26;
+            r = 14 + n1 * 10; g = 34 + n1 * 18; bl = 72 + n1 * 24;
+          } else if (b === 1) { // SHALLOW_WATER
+            elev = 44 + n1 * 22;
+            r = 26 + n1 * 18; g = 74 + n1 * 32; bl = 128 + n1 * 30;
+          } else if (b === 2) { // SNOW / ALPINE PEAKS
+            elev = 122 + inland * 4.5 + r1 * 86;
+            const rock = r1 > 0.62 ? 0 : 18;
+            r = 185 + n1 * 48 - rock; g = 198 + n1 * 44 - rock; bl = 214 + n1 * 34;
+          } else if (b === 3) { // FOREST
+            elev = 79 + inland * 2.4 + n1 * 28 + r1 * 24;
+            r = 34 + n1 * 24; g = 86 + n1 * 38; bl = 42 + n1 * 18;
+          } else if (b === 4) { // DESERT
+            elev = 78 + inland * 2.2 + n1 * 24 + r1 * 30;
+            r = 166 + n1 * 36; g = 142 + n1 * 30; bl = 84 + n1 * 22;
+          } else { // PLAINS
+            elev = 76 + inland * 1.9 + n1 * 22 + r1 * 22;
+            r = 66 + n1 * 32; g = 124 + n1 * 34; bl = 62 + n1 * 20;
+          }
+
+          // Blend slightly with real Earth thumbnail colors if available
+          if (thumbPixels && b >= 2) {
+            const p = i * 4;
+            r = r * 0.72 + thumbPixels[p] * 0.28;
+            g = g * 0.72 + thumbPixels[p + 1] * 0.28;
+            bl = bl * 0.72 + thumbPixels[p + 2] * 0.28;
+          }
+
+          elev = Math.max(2, Math.min(254, elev));
+          rawElev[i] = elev;
+
+          const p = i * 4;
+          cData[p] = Math.max(0, Math.min(255, r));
+          cData[p + 1] = Math.max(0, Math.min(255, g));
+          cData[p + 2] = Math.max(0, Math.min(255, bl));
+          cData[p + 3] = 255;
+
+          const hv = Math.round(elev);
+          hData[p] = hv;
+          hData[p + 1] = hv;
+          hData[p + 2] = hv;
+          hData[p + 3] = 255;
+        }
+      }
+
+      // Draw crisp hillshaded 2D canvas
+      const hillImg = new ImageData(cw, ch);
+      const hd = hillImg.data;
+      for (let z = 0; z < ch; z++) {
+        for (let x = 0; x < cw; x++) {
+          const i = z * cw + x;
+          const p = i * 4;
+          const b = biomeAtGrid(x, z);
+          let shade = 1.0;
+          if (b >= 2) {
+            const hL = rawElev[z * cw + Math.max(0, x - 1)];
+            const hR = rawElev[z * cw + Math.min(cw - 1, x + 1)];
+            const hU = rawElev[Math.max(0, z - 1) * cw + x];
+            const hD = rawElev[Math.min(ch - 1, z + 1) * cw + x];
+            const slope = (hL - hR) * 0.65 + (hU - hD) * 0.65;
+            shade = Math.max(0.66, Math.min(1.28, 1.0 + slope * 0.015));
+          }
+          hd[p] = Math.min(255, cData[p] * shade);
+          hd[p + 1] = Math.min(255, cData[p + 1] * shade);
+          hd[p + 2] = Math.min(255, cData[p + 2] * shade);
+          hd[p + 3] = 255;
+        }
+      }
+
+      const tmpC = document.createElement("canvas");
+      tmpC.width = cw; tmpC.height = ch;
+      tmpC.getContext("2d").putImageData(cImg, 0, 0);
+
+      const tmpH = document.createElement("canvas");
+      tmpH.width = cw; tmpH.height = ch;
+      tmpH.getContext("2d").putImageData(hImg, 0, 0);
+
+      const tmpHill = document.createElement("canvas");
+      tmpHill.width = cw; tmpHill.height = ch;
+      tmpHill.getContext("2d").putImageData(hillImg, 0, 0);
+
+      synthColorCtx.imageSmoothingEnabled = true;
+      synthColorCtx.drawImage(tmpC, 0, 0, TEX_W, TEX_H);
+
+      synthHeightCtx.imageSmoothingEnabled = true;
+      synthHeightCtx.drawImage(tmpH, 0, 0, TEX_W, TEX_H);
+
+      hill2dCtx.imageSmoothingEnabled = true;
+      hill2dCtx.drawImage(tmpHill, 0, 0, hill2dCanvas.width, hill2dCanvas.height);
+
+      compositeLiveTilesOntoTextures();
+    }
+
+    function compositeLiveTilesOntoTextures() {
+      if (!synthColorCtx || !synthHeightCtx) return;
+      const pxPerChunkX = TEX_W / WORLD_W;
+      const pxPerChunkZ = TEX_H / WORLD_H;
+
+      for (const entry of tileCache.values()) {
+        if (!entry.colorImg || !entry.heightImg) continue;
+        const startChunkX = entry.rx * REGION_CHUNKS;
+        const startChunkZ = entry.rz * REGION_CHUNKS;
+        const dx = (startChunkX - MIN_CX) * pxPerChunkX;
+        const dz = (startChunkZ - MIN_CZ) * pxPerChunkZ;
+        const dw = REGION_CHUNKS * pxPerChunkX;
+        const dh = REGION_CHUNKS * pxPerChunkZ;
+
+        synthColorCtx.imageSmoothingEnabled = false;
+        synthColorCtx.drawImage(entry.colorImg, dx, dz, dw, dh);
+        synthHeightCtx.imageSmoothingEnabled = false;
+        synthHeightCtx.drawImage(entry.heightImg, dx, dz, dw, dh);
+
+        // Also stamp onto 2D hill canvas
+        const dx2 = (startChunkX - MIN_CX) * 2;
+        const dz2 = (startChunkZ - MIN_CZ) * 2;
+        hill2dCtx.imageSmoothingEnabled = false;
+        hill2dCtx.drawImage(entry.colorImg, dx2, dz2, REGION_CHUNKS * 2, REGION_CHUNKS * 2);
+      }
+
+      uploadTexture(texColor, synthColorCanvas);
+      uploadTexture(texHeight, synthHeightCanvas);
+    }
+
+    function rebuildCountryOverlayTexture() {
+      countryOverlayCtx.clearRect(0, 0, WORLD_W, WORLD_H);
+      if (!layers.territories && !layers.borders) {
+        uploadTexture(texCountry, countryOverlayCanvas);
+        return;
+      }
+      const img = countryOverlayCtx.createImageData(WORLD_W, WORLD_H);
+      const data = img.data;
+
+      for (const [k, owner] of chunkOwnerMap.entries()) {
+        const [cx, cz] = k.split(",").map(Number);
+        const gx = cx - MIN_CX;
+        const gz = cz - MIN_CZ;
+        if (gx < 0 || gx >= WORLD_W || gz < 0 || gz >= WORLD_H) continue;
+
+        const isSel = owner.id === selectedCountryId;
+        const nSame = chunkOwnerMap.get(cx + "," + (cz - 1))?.id === owner.id;
+        const sSame = chunkOwnerMap.get(cx + "," + (cz + 1))?.id === owner.id;
+        const wSame = chunkOwnerMap.get((cx - 1) + "," + cz)?.id === owner.id;
+        const eSame = chunkOwnerMap.get((cx + 1) + "," + cz)?.id === owner.id;
+        const isEdge = !(nSame && sSame && wSame && eSame);
+
+        const hex = owner.color.replace("#", "");
+        const cr = parseInt(hex.slice(0, 2), 16) || 120;
+        const cg = parseInt(hex.slice(2, 4), 16) || 180;
+        const cb = parseInt(hex.slice(4, 6), 16) || 255;
+
+        const p = (gz * WORLD_W + gx) * 4;
+        if (isEdge && layers.borders) {
+          data[p] = Math.min(255, cr + (isSel ? 55 : 25));
+          data[p + 1] = Math.min(255, cg + (isSel ? 55 : 25));
+          data[p + 2] = Math.min(255, cb + (isSel ? 55 : 25));
+          data[p + 3] = 245; // >= 0.85 triggers crisp border path in shader
+        } else if (layers.territories) {
+          data[p] = cr;
+          data[p + 1] = cg;
+          data[p + 2] = cb;
+          data[p + 3] = isSel ? 175 : 140;
+        }
+      }
+      countryOverlayCtx.putImageData(img, 0, 0);
+      uploadTexture(texCountry, countryOverlayCanvas);
+    }
+
+    // ---------------- Tile Fetching (.mca Live World Surface) ----------------
+    async function syncLiveTiles() {
+      const list = Array.isArray(state.tiles) ? state.tiles : [];
+      if (list.length === 0) {
+        updateTileBadge();
+        return;
+      }
+      let anyUpdated = false;
+      for (const meta of list) {
+        const key = meta.id || (meta.rx + "_" + meta.rz);
+        const cached = tileCache.get(key);
+        if (cached && cached.version >= meta.v) continue;
+        if (cached && cached.loading) continue;
+
+        tileCache.set(key, {
+          rx: meta.rx,
+          rz: meta.rz,
+          version: cached ? cached.version : 0,
+          loading: true,
+          colorImg: cached ? cached.colorImg : null,
+          heightImg: cached ? cached.heightImg : null
+        });
+
+        fetchOneTile(meta.rx, meta.rz, meta.v, key).then(ok => {
+          if (ok) {
+            compositeLiveTilesOntoTextures();
+            updateTileBadge();
+          }
+        });
+        anyUpdated = true;
+      }
+      if (!anyUpdated) updateTileBadge();
+    }
+
+    async function fetchOneTile(rx, rz, version, key) {
       try {
-        gl = globeCanvas.getContext("webgl", { antialias: true, alpha: false, powerPreference: "high-performance" });
-        if (!gl) return false;
-
-        const vsSrc = `
-          attribute vec2 aPos;
-          void main() {
-            gl_Position = vec4(aPos, 0.0, 1.0);
+        let tileObj = null;
+        if (IS_GIST_HOST && gistId) {
+          const fname = "worldchill-tile-" + rx + "_" + rz + ".json";
+          const fileEntry = lastGistFiles?.[fname];
+          if (!fileEntry) return false;
+          let txt = fileEntry.content || "";
+          if (fileEntry.truncated && fileEntry.raw_url) {
+            const rawResp = await fetch(fileEntry.raw_url + "?t=" + Date.now());
+            if (!rawResp.ok) return false;
+            txt = await rawResp.text();
           }
-        `;
-
-        const fsSrc = `
-          precision highp float;
-          uniform vec2 uRes;
-          uniform float uFocal;
-          uniform float uDist;
-          uniform float uYaw;
-          uniform float uPitch;
-          uniform float uTime;
-          uniform float uHasTerrain;
-          uniform float uHasBiomes;
-          uniform float uShowBorders;
-          uniform sampler2D uTerrain;
-          uniform sampler2D uBiomes;
-          uniform sampler2D uCountry;
-
-          const float PI = 3.14159265359;
-
-          float hash21(vec2 p) {
-            p = fract(p * vec2(123.34, 456.21));
-            p += dot(p, p + 45.32);
-            return fract(p.x * p.y);
-          }
-
-          vec3 rotateInv(vec3 p) {
-            float cp = cos(uPitch);
-            float sp = sin(uPitch);
-            vec3 q = vec3(p.x, p.y * cp + p.z * sp, -p.y * sp + p.z * cp);
-            float cy = cos(uYaw);
-            float sy = sin(uYaw);
-            return vec3(q.x * cy + q.z * sy, q.y, -q.x * sy + q.z * cy);
-          }
-
-          void main() {
-            vec2 px = vec2(gl_FragCoord.x, uRes.y - gl_FragCoord.y);
-            vec2 center = uRes * 0.5;
-            vec3 rd = normalize(vec3((px.x - center.x) / uFocal, -(px.y - center.y) / uFocal, -1.0));
-            vec3 ro = vec3(0.0, 0.0, uDist);
-
-            float b = dot(ro, rd);
-            float c = uDist * uDist - 1.0;
-            float disc = b * b - c;
-
-            // Starfield background
-            vec3 spaceCol = vec3(0.016, 0.032, 0.075);
-            vec2 starCell = floor(gl_FragCoord.xy * 0.25);
-            float starVal = hash21(starCell);
-            if (starVal > 0.992) {
-              float tw = 0.55 + 0.45 * sin(uTime * 2.1 + starVal * 90.0);
-              spaceCol += vec3(0.75, 0.85, 1.0) * tw * ((starVal - 0.992) / 0.008);
-            }
-
-            if (disc < 0.0) {
-              // Closest distance from ray to sphere surface for outer atmosphere rim glow
-              float minDist = length(ro + rd * max(0.0, -b)) - 1.0;
-              float halo = exp(-max(0.0, minDist) * 14.0) * 0.72;
-              spaceCol += vec3(0.18, 0.58, 0.98) * halo;
-              gl_FragColor = vec4(spaceCol, 1.0);
-              return;
-            }
-
-            float t = -b - sqrt(disc);
-            vec3 hitView = ro + rd * t;
-            vec3 nView = normalize(hitView);
-            vec3 nWorld = rotateInv(nView);
-
-            float lat = asin(clamp(nWorld.y, -1.0, 1.0));
-            float lon = atan(nWorld.x, nWorld.z);
-            vec2 uv = vec2(lon / (2.0 * PI) + 0.5, 0.5 - lat / PI);
-
-            vec3 baseColor = vec3(0.07, 0.20, 0.36);
-            if (uHasTerrain > 0.5) {
-              baseColor = texture2D(uTerrain, uv).rgb;
-            }
-
-            float isWater = 0.0;
-            vec3 bumpN = nView;
-            if (uHasBiomes > 0.5) {
-              float bCenter = texture2D(uBiomes, uv).r * 255.0;
-              isWater = bCenter < 1.5 ? 1.0 : 0.0;
-              vec2 texel = vec2(1.0 / 768.0, 1.0 / 384.0);
-              float hL = texture2D(uBiomes, uv - vec2(texel.x, 0.0)).r * 255.0;
-              float hR = texture2D(uBiomes, uv + vec2(texel.x, 0.0)).r * 255.0;
-              float hU = texture2D(uBiomes, uv - vec2(0.0, texel.y)).r * 255.0;
-              float hD = texture2D(uBiomes, uv + vec2(0.0, texel.y)).r * 255.0;
-              float lL = hL < 1.5 ? 0.0 : (hL == 2.0 ? 1.3 : 0.85);
-              float lR = hR < 1.5 ? 0.0 : (hR == 2.0 ? 1.3 : 0.85);
-              float lU = hU < 1.5 ? 0.0 : (hU == 2.0 ? 1.3 : 0.85);
-              float lD = hD < 1.5 ? 0.0 : (hD == 2.0 ? 1.3 : 0.85);
-              float gx = (lL - lR) * 0.28;
-              float gy = (lU - lD) * 0.28;
-              bumpN = normalize(nView + vec3(gx, -gy, 0.0));
-            }
-
-            vec3 lightDir = normalize(vec3(-0.55, 0.45, 0.70));
-            vec3 viewDir = normalize(-rd);
-            float diff = max(0.18, dot(bumpN, lightDir) * 0.82 + 0.34);
-
-            // Specular ocean glint
-            vec3 halfVec = normalize(lightDir + viewDir);
-            float spec = isWater * pow(max(0.0, dot(bumpN, halfVec)), 42.0) * 0.48;
-
-            vec3 lit = baseColor * diff + vec3(0.55, 0.82, 1.0) * spec;
-
-            // Country territories + bright border highlight
-            if (uShowBorders > 0.5) {
-              vec4 ct = texture2D(uCountry, uv);
-              if (ct.a > 0.01) {
-                float fillAmt = ct.a > 0.85 ? 0.68 : 0.46;
-                lit = mix(lit, ct.rgb * (0.65 + 0.35 * diff), fillAmt);
-                if (ct.a > 0.85) {
-                  lit += ct.rgb * 0.28;
-                }
-              }
-            }
-
-            // Inner atmospheric Fresnel rim
-            float fresnel = pow(1.0 - max(0.0, dot(nView, viewDir)), 3.0);
-            lit = mix(lit, vec3(0.26, 0.72, 1.0), fresnel * 0.52);
-
-            gl_FragColor = vec4(lit, 1.0);
-          }
-        `;
-
-        const compile = (type, src) => {
-          const s = gl.createShader(type);
-          gl.shaderSource(s, src);
-          gl.compileShader(s);
-          if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
-            gl.deleteShader(s);
-            return null;
-          }
-          return s;
-        };
-
-        const vs = compile(gl.VERTEX_SHADER, vsSrc);
-        const fs = compile(gl.FRAGMENT_SHADER, fsSrc);
-        if (!vs || !fs) return false;
-
-        glProg = gl.createProgram();
-        gl.attachShader(glProg, vs);
-        gl.attachShader(glProg, fs);
-        gl.linkProgram(glProg);
-        if (!gl.getProgramParameter(glProg, gl.LINK_STATUS)) return false;
-
-        const buf = gl.createBuffer();
-        gl.bindBuffer(gl.ARRAY_BUFFER, buf);
-        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
-        const aPos = gl.getAttribLocation(glProg, "aPos");
-        gl.enableVertexAttribArray(aPos);
-        gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
-
-        const makeTex = (unit, filter) => {
-          const tex = gl.createTexture();
-          gl.activeTexture(gl.TEXTURE0 + unit);
-          gl.bindTexture(gl.TEXTURE_2D, tex);
-          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
-          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter);
-          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter);
-          return tex;
-        };
-
-        glTerrainTex = makeTex(0, gl.LINEAR);
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([16, 42, 72, 255]));
-
-        glBiomeTex = makeTex(1, gl.NEAREST);
-        gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.LUMINANCE, 1, 1, 0, gl.LUMINANCE, gl.UNSIGNED_BYTE, new Uint8Array([0]));
-
-        glCountryTex = makeTex(2, gl.NEAREST);
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([0, 0, 0, 0]));
-
-        glLocs = {
-          uRes: gl.getUniformLocation(glProg, "uRes"),
-          uFocal: gl.getUniformLocation(glProg, "uFocal"),
-          uDist: gl.getUniformLocation(glProg, "uDist"),
-          uYaw: gl.getUniformLocation(glProg, "uYaw"),
-          uPitch: gl.getUniformLocation(glProg, "uPitch"),
-          uTime: gl.getUniformLocation(glProg, "uTime"),
-          uHasTerrain: gl.getUniformLocation(glProg, "uHasTerrain"),
-          uHasBiomes: gl.getUniformLocation(glProg, "uHasBiomes"),
-          uShowBorders: gl.getUniformLocation(glProg, "uShowBorders"),
-          uTerrain: gl.getUniformLocation(glProg, "uTerrain"),
-          uBiomes: gl.getUniformLocation(glProg, "uBiomes"),
-          uCountry: gl.getUniformLocation(glProg, "uCountry")
-        };
-
-        webglReady = true;
+          tileObj = JSON.parse(txt);
+        } else {
+          const resp = await fetch("/api/tile?rx=" + rx + "&rz=" + rz + "&v=" + version, { cache: "no-store" });
+          if (!resp.ok) return false;
+          tileObj = await resp.json();
+        }
+        if (!tileObj || !tileObj.colorPng || !tileObj.heightPng) return false;
+        const [colorImg, heightImg] = await Promise.all([
+          loadImageAsync(tileObj.colorPng),
+          loadImageAsync(tileObj.heightPng)
+        ]);
+        tileCache.set(key, { rx, rz, version, loading: false, colorImg, heightImg });
+        loadedTileCount = Array.from(tileCache.values()).filter(t => t.colorImg).length;
         return true;
-      } catch (_) {
-        webglReady = false;
+      } catch (e) {
+        const cur = tileCache.get(key);
+        if (cur) cur.loading = false;
         return false;
       }
     }
 
-    function updateGlobeCountryTexture() {
-      countryTexDirty = false;
-      countryTexCtx.clearRect(0, 0, WORLD_W, WORLD_H);
-      if (!state || !ownerGrid) return;
-
-      const img = countryTexCtx.createImageData(WORLD_W, WORLD_H);
-      const data = img.data;
-      const countries = state.countries;
-      const rgbs = countries.map(c => hexToRgb(c.color));
-
-      for (let gz = 0; gz < WORLD_H; gz++) {
-        for (let gx = 0; gx < WORLD_W; gx++) {
-          const i = gz * WORLD_W + gx;
-          const idx = ownerGrid[i];
-          if (idx < 0 || idx >= countries.length) continue;
-
-          const c = countries[idx];
-          const isFocus = c.id === selectedCountryId || c.id === hoveredCountryId;
-          const isEdge = gx === 0 || ownerGrid[i - 1] !== idx
-            || gx === WORLD_W - 1 || ownerGrid[i + 1] !== idx
-            || gz === 0 || ownerGrid[i - WORLD_W] !== idx
-            || gz === WORLD_H - 1 || ownerGrid[i + WORLD_W] !== idx;
-
-          const [r, g, b] = rgbs[idx];
-          const p = i * 4;
-          if (isEdge && isFocus) {
-            data[p] = 255; data[p + 1] = 255; data[p + 2] = 255; data[p + 3] = 255;
-          } else {
-            data[p] = r; data[p + 1] = g; data[p + 2] = b;
-            data[p + 3] = (isEdge || isFocus) ? 245 : 150;
-          }
-        }
-      }
-      countryTexCtx.putImageData(img, 0, 0);
-
-      if (webglReady && gl) {
-        gl.activeTexture(gl.TEXTURE2);
-        gl.bindTexture(gl.TEXTURE_2D, glCountryTex);
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, countryTexCanvas);
-      }
-    }
-
-    function getGlobeFocal(vw, vh) {
-      return Math.min(vw, vh) * 0.42 * globe.dist;
-    }
-
-    function gridToSphere(gx, gz, alt = 0) {
-      const u = gx / WORLD_W;
-      const v = gz / WORLD_H;
-      const lat = (0.5 - v) * Math.PI;
-      const lon = (u - 0.5) * Math.PI * 2;
-      const r = 1.0 + alt;
-      const cl = Math.cos(lat);
-      return {
-        x: r * cl * Math.sin(lon),
-        y: r * Math.sin(lat),
-        z: r * cl * Math.cos(lon)
-      };
-    }
-
-    function worldToGlobeView(p0) {
-      const cy = Math.cos(globe.yaw), sy = Math.sin(globe.yaw);
-      const x1 = p0.x * cy - p0.z * sy;
-      const z1 = p0.x * sy + p0.z * cy;
-      const y1 = p0.y;
-      const cp = Math.cos(globe.pitch), sp = Math.sin(globe.pitch);
-      return {
-        x: x1,
-        y: y1 * cp - z1 * sp,
-        z: y1 * sp + z1 * cp
-      };
-    }
-
-    function projectGlobePoint(gx, gz, alt, vw, vh) {
-      const p0 = gridToSphere(gx, gz, alt);
-      const pv = worldToGlobeView(p0);
-      const r = 1.0 + alt;
-      // Tangent-plane horizon threshold so points cleanly vanish as they go behind Earth
-      const horizonZ = r / globe.dist;
-      if (pv.z <= horizonZ) return null;
-      const depth = globe.dist - pv.z;
-      const focal = getGlobeFocal(vw, vh);
-      return {
-        x: vw * 0.5 + (pv.x / depth) * focal,
-        y: vh * 0.5 - (pv.y / depth) * focal,
-        z: pv.z,
-        scale: focal / depth
-      };
-    }
-
-    function screenToGlobeGrid(sx, sy, vw, vh) {
-      const focal = getGlobeFocal(vw, vh);
-      const rdx = (sx - vw * 0.5) / focal;
-      const rdy = -(sy - vh * 0.5) / focal;
-      const rdz = -1.0;
-      const invLen = 1.0 / Math.hypot(rdx, rdy, rdz);
-      const dx = rdx * invLen, dy = rdy * invLen, dz = rdz * invLen;
-
-      const b = globe.dist * dz;
-      const c = globe.dist * globe.dist - 1.0;
-      const disc = b * b - c;
-      if (disc < 0) return null;
-
-      const t = -b - Math.sqrt(disc);
-      const hx = dx * t;
-      const hy = dy * t;
-      const hz = globe.dist + dz * t;
-
-      const cp = Math.cos(globe.pitch), sp = Math.sin(globe.pitch);
-      const y1 = hy * cp + hz * sp;
-      const z1 = -hy * sp + hz * cp;
-      const x1 = hx;
-
-      const cy = Math.cos(globe.yaw), syYaw = Math.sin(globe.yaw);
-      const x0 = x1 * cy + z1 * syYaw;
-      const z0 = -x1 * syYaw + z1 * cy;
-      const y0 = y1;
-
-      const lat = Math.asin(clamp(y0, -1.0, 1.0));
-      const lon = Math.atan2(x0, z0);
-      const u = lon / (Math.PI * 2) + 0.5;
-      const v = 0.5 - lat / Math.PI;
-      return {
-        gx: clamp(u * WORLD_W, 0, WORLD_W - 0.001),
-        gz: clamp(v * WORLD_H, 0, WORLD_H - 0.001),
-        latDeg: lat * 180 / Math.PI,
-        lonDeg: lon * 180 / Math.PI
-      };
-    }
-
-    // ---------------- 2D & 2.5D Projections ----------------
-    function resizeCanvas() {
-      const dpr = window.devicePixelRatio || 1;
-      const w = Math.floor(window.innerWidth * dpr);
-      const h = Math.floor(window.innerHeight * dpr);
-      canvas.width = w;
-      canvas.height = h;
-      globeCanvas.width = w;
-      globeCanvas.height = h;
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      if (webglReady && gl) {
-        gl.viewport(0, 0, w, h);
-      }
-      draw();
-    }
-
-    function worldToScreen(gx, gz, alt = 0) {
-      const vw = window.innerWidth;
-      const vh = window.innerHeight;
-      if (viewMode === "3d") {
-        return projectGlobePoint(gx, gz, alt, vw, vh);
-      }
-      if (viewMode === "25d") {
-        const dx = (gx - cam.x) * cam.scale;
-        const dz = (gz - cam.z) * cam.scale;
-        const c = Math.cos(cam.yaw25);
-        const s = Math.sin(cam.yaw25);
-        const rx = dx * c - dz * s;
-        const rz = dx * s + dz * c;
-        return {
-          x: vw * 0.5 + rx,
-          y: vh * 0.5 + rz * cam.tilt25 - alt
-        };
-      }
-      return {
-        x: vw * 0.5 + (gx - cam.x) * cam.scale,
-        y: vh * 0.5 + (gz - cam.z) * cam.scale
-      };
-    }
-
-    function screenToWorld(sx, sy) {
-      const vw = window.innerWidth;
-      const vh = window.innerHeight;
-      if (viewMode === "3d") {
-        const hit = screenToGlobeGrid(sx, sy, vw, vh);
-        return hit || { gx: -1, gz: -1 };
-      }
-      if (viewMode === "25d") {
-        const rx = sx - vw * 0.5;
-        const rz = (sy - vh * 0.5) / cam.tilt25;
-        const c = Math.cos(cam.yaw25);
-        const s = Math.sin(cam.yaw25);
-        const dx = rx * c + rz * s;
-        const dz = -rx * s + rz * c;
-        return {
-          gx: cam.x + dx / cam.scale,
-          gz: cam.z + dz / cam.scale
-        };
-      }
-      return {
-        gx: cam.x + (sx - vw * 0.5) / cam.scale,
-        gz: cam.z + (sy - vh * 0.5) / cam.scale
-      };
-    }
-
-    function setViewMode(nextMode) {
-      if (nextMode === "3d" && !webglReady) {
-        nextMode = "25d";
-      }
-      if (nextMode === viewMode) return;
-
-      // Preserve focus coordinates across view switches
-      if (viewMode === "3d") {
-        cam.x = clamp((globe.yaw / (Math.PI * 2) + 0.5) * WORLD_W, 0, WORLD_W);
-        cam.z = clamp((0.5 - globe.pitch / Math.PI) * WORLD_H, 0, WORLD_H);
-        const frac = clamp((4.0 - globe.dist) / 2.8, 0, 1);
-        cam.scale = 1.3 + frac * 7.5;
-      } else if (nextMode === "3d") {
-        globe.yaw = (cam.x / WORLD_W - 0.5) * Math.PI * 2;
-        globe.pitch = clamp((0.5 - cam.z / WORLD_H) * Math.PI, -1.3, 1.3);
-        const frac = clamp((cam.scale - 1.3) / 7.5, 0, 1);
-        globe.dist = clamp(3.3 - frac * 1.9, 1.15, 4.0);
-        globe.autoSpin = false;
-      }
-
-      viewMode = nextMode;
-      document.querySelectorAll("[data-view]").forEach(b => {
-        b.classList.toggle("active", b.dataset.view === viewMode);
+    function loadImageAsync(src) {
+      return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = reject;
+        img.src = src;
       });
-      syncModeControls();
-      updateZoomLabel();
-      draw();
     }
 
-    function syncModeControls() {
-      const is3D = viewMode === "3d";
-      const is25D = viewMode === "25d";
-      globeCanvas.style.display = is3D ? "block" : "none";
-      document.getElementById("spinBtn").style.display = is3D ? "inline-block" : "none";
-      document.getElementById("spinBtn").classList.toggle("active", globe.autoSpin);
-      document.getElementById("rotLeftBtn").style.display = is25D ? "inline-block" : "none";
-      document.getElementById("rotRightBtn").style.display = is25D ? "inline-block" : "none";
-
-      const hint = document.getElementById("viewHint");
-      if (is3D) hint.textContent = "ЛКМ — крутить Землю • Колесо — зум";
-      else if (is25D) hint.textContent = "ЛКМ — двигать • ПКМ — поворот 2.5D • Колесо — зум";
-      else hint.textContent = "ЛКМ — двигать • Колесо — зум";
-    }
-
-    function fitWorld() {
-      const w = window.innerWidth;
-      const h = window.innerHeight;
-      if (viewMode === "3d") {
-        globe.anim = null;
-        globe.pitch = 0.36;
-        globe.dist = 2.55;
-        globe.autoSpin = true;
-        syncModeControls();
-        updateZoomLabel();
-        draw();
-        return;
-      }
-      const sx = (w * 0.84) / WORLD_W;
-      const sy = (h * 0.78) / WORLD_H;
-      cam.scale = Math.max(1.0, Math.min(sx, sy));
-      cam.x = WORLD_W / 2;
-      cam.z = WORLD_H / 2;
-      cam.yaw25 = viewMode === "25d" ? -0.45 : 0;
-      cam.tilt25 = 0.62;
-      cam.anim = null;
-      updateZoomLabel();
-      draw();
-    }
-
-    function updateZoomLabel() {
-      if (viewMode === "3d") {
-        const pct = Math.round((2.55 / globe.dist) * 100);
-        document.getElementById("zoomLabel").textContent = pct + "%";
+    function updateTileBadge() {
+      const el = document.getElementById("tileStats");
+      if (!el) return;
+      if (loadedTileCount > 0) {
+        el.textContent = "🧱 Чанки мира: " + loadedTileCount + " рег.";
       } else {
-        document.getElementById("zoomLabel").textContent = Math.round(cam.scale * 50) + "%";
+        el.textContent = "⛰ Ландшафт Земли";
       }
     }
 
-    function animateTo(gx, gz, targetScale) {
-      if (viewMode === "3d") {
-        globe.autoSpin = false;
-        syncModeControls();
-        const targetYaw = (gx / WORLD_W - 0.5) * Math.PI * 2;
-        const targetPitch = clamp((0.5 - gz / WORLD_H) * Math.PI, -1.35, 1.35);
-        const startYaw = globe.yaw;
-        const deltaYaw = wrapLonRad(targetYaw - startYaw);
-        globe.anim = {
-          sy: startYaw, dy: deltaYaw,
-          sp: globe.pitch, tp: targetPitch,
-          sd: globe.dist, td: Math.min(globe.dist, 1.62),
-          start: performance.now(), duration: 680
-        };
-        requestAnimationFrame(stepGlobeAnim);
-        return;
-      }
-      cam.anim = {
-        sx: cam.x, sz: cam.z, ss: cam.scale,
-        tx: gx, tz: gz, ts: Math.max(cam.scale, targetScale),
-        start: performance.now(), duration: 420
-      };
-      requestAnimationFrame(stepAnim);
+    // ---------------- Data Loading ----------------
+    async function loadStaticTerrain() {
+      try {
+        const img = await loadImageAsync(IS_GIST_HOST ? "./terrain.png" : "/api/terrain.png");
+        baseThumbImg = img;
+      } catch (_) {}
+      try {
+        const biomeRes = await fetch(IS_GIST_HOST ? "./biomes.bin" : "/api/biomes");
+        if (biomeRes.ok) {
+          biomeBytes = new Uint8Array(await biomeRes.arrayBuffer());
+        }
+      } catch (_) {}
+      rebuildBaseTerrain();
     }
 
-    function stepGlobeAnim(now) {
-      if (!globe.anim || viewMode !== "3d") return;
-      const t = Math.min(1, (now - globe.anim.start) / globe.anim.duration);
-      const ease = 1 - Math.pow(1 - t, 3);
-      globe.yaw = wrapLonRad(globe.anim.sy + globe.anim.dy * ease);
-      globe.pitch = globe.anim.sp + (globe.anim.tp - globe.anim.sp) * ease;
-      globe.dist = globe.anim.sd + (globe.anim.td - globe.anim.sd) * ease;
-      updateZoomLabel();
-      draw();
-      if (t < 1) {
-        requestAnimationFrame(stepGlobeAnim);
-      } else {
-        globe.anim = null;
-      }
-    }
-
-    function stepAnim(now) {
-      if (!cam.anim) return;
-      const t = Math.min(1, (now - cam.anim.start) / cam.anim.duration);
-      const ease = 1 - Math.pow(1 - t, 3);
-      cam.x = cam.anim.sx + (cam.anim.tx - cam.anim.sx) * ease;
-      cam.z = cam.anim.sz + (cam.anim.tz - cam.anim.sz) * ease;
-      cam.scale = cam.anim.ss + (cam.anim.ts - cam.anim.ss) * ease;
-      updateZoomLabel();
-      draw();
-      if (t < 1) {
-        requestAnimationFrame(stepAnim);
-      } else {
-        cam.anim = null;
-      }
-    }
-
-    function rebuildIndexes() {
-      if (!state || !state.world) return;
-      const w = state.world.width;
-      const h = state.world.height;
-      const minX = state.world.minChunkX;
-      const minZ = state.world.minChunkZ;
-      ownerGrid = new Int16Array(w * h);
-      ownerGrid.fill(-1);
-      countryMap.clear();
-      capitalMap.clear();
-      countryHeights.clear();
-
-      let maxGdp = 1;
-      for (const c of state.countries) {
-        maxGdp = Math.max(maxGdp, c.hourlyGdp || 0);
-      }
-
-      state.countries.forEach((c, idx) => {
-        countryMap.set(c.id, c);
-        const normGdp = Math.sqrt(Math.max(0, c.hourlyGdp || 0) / maxGdp);
-        countryHeights.set(c.id, 0.35 + normGdp * 0.65);
-
-        let sumX = 0, sumZ = 0, count = 0;
-        const cl = c.claims || [];
-        for (let i = 0; i + 1 < cl.length; i += 2) {
-          const gx = cl[i] - minX;
-          const gz = cl[i + 1] - minZ;
-          if (gx >= 0 && gx < w && gz >= 0 && gz < h) {
-            ownerGrid[gz * w + gx] = idx;
-            sumX += gx + 0.5;
-            sumZ += gz + 0.5;
-            count++;
+    async function loadState(manual = false) {
+      try {
+        let nextState;
+        if (IS_GIST_HOST) {
+          if (!gistId) {
+            document.getElementById("gistSetupBanner").style.display = "block";
+            document.getElementById("liveStats").textContent = "Укажите Gist ID";
+            return;
           }
-        }
-        if (c.spawn) {
-          capitalMap.set(c.id, {
-            gx: c.spawn.cx - minX + 0.5,
-            gz: c.spawn.cz - minZ + 0.5
-          });
-        } else if (count > 0) {
-          capitalMap.set(c.id, { gx: sumX / count, gz: sumZ / count });
-        }
-      });
-
-      countryTexDirty = true;
-    }
-
-    function drawBackgroundStars(vw, vh) {
-      ctx.fillStyle = "#050914";
-      ctx.fillRect(0, 0, vw, vh);
-      for (const st of bgStars) {
-        ctx.fillStyle = `rgba(186, 230, 253, ${st.alpha})`;
-        ctx.fillRect(st.rx * vw, st.ry * vh, st.size, st.size);
-      }
-    }
-
-    function draw() {
-      const vw = window.innerWidth;
-      const vh = window.innerHeight;
-      if (viewMode === "3d") {
-        drawGlobeView(vw, vh);
-      } else if (viewMode === "25d") {
-        draw25DView(vw, vh);
-      } else {
-        draw2DView(vw, vh);
-      }
-    }
-
-    // ---------------- 3D GLOBE RENDER ----------------
-    function drawGlobeView(vw, vh) {
-      ctx.clearRect(0, 0, vw, vh);
-      if (!webglReady || !gl) {
-        draw25DView(vw, vh);
-        return;
-      }
-
-      if (glNeedsTerrainUpload && terrainReady) {
-        glNeedsTerrainUpload = false;
-        gl.activeTexture(gl.TEXTURE0);
-        gl.bindTexture(gl.TEXTURE_2D, glTerrainTex);
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, terrainImg);
-      }
-      if (glNeedsBiomeUpload && biomeBytes && biomeBytes.length === WORLD_W * WORLD_H) {
-        glNeedsBiomeUpload = false;
-        gl.activeTexture(gl.TEXTURE1);
-        gl.bindTexture(gl.TEXTURE_2D, glBiomeTex);
-        gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.LUMINANCE, WORLD_W, WORLD_H, 0, gl.LUMINANCE, gl.UNSIGNED_BYTE, biomeBytes);
-      }
-      if (countryTexDirty && ownerGrid) {
-        updateGlobeCountryTexture();
-      }
-
-      gl.useProgram(glProg);
-      gl.uniform2f(glLocs.uRes, globeCanvas.width, globeCanvas.height);
-      const dpr = window.devicePixelRatio || 1;
-      gl.uniform1f(glLocs.uFocal, getGlobeFocal(vw, vh) * dpr);
-      gl.uniform1f(glLocs.uDist, globe.dist);
-      gl.uniform1f(glLocs.uYaw, globe.yaw);
-      gl.uniform1f(glLocs.uPitch, globe.pitch);
-      gl.uniform1f(glLocs.uTime, performance.now() * 0.001);
-      gl.uniform1f(glLocs.uHasTerrain, terrainReady ? 1.0 : 0.0);
-      gl.uniform1f(glLocs.uHasBiomes, (biomeBytes && biomeBytes.length === WORLD_W * WORLD_H) ? 1.0 : 0.0);
-      gl.uniform1f(glLocs.uShowBorders, (layers.borders && ownerGrid) ? 1.0 : 0.0);
-      gl.uniform1i(glLocs.uTerrain, 0);
-      gl.uniform1i(glLocs.uBiomes, 1);
-      gl.uniform1i(glLocs.uCountry, 2);
-      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-
-      if (!state) return;
-
-      const minX = state.world.minChunkX;
-      const minZ = state.world.minChunkZ;
-
-      // Chunk grid overlay when zoomed closely onto globe
-      if (layers.grid && globe.dist < 1.48) {
-        const hit = screenToGlobeGrid(vw * 0.5, vh * 0.5, vw, vh);
-        if (hit) {
-          ctx.strokeStyle = "rgba(255, 255, 255, 0.14)";
-          ctx.lineWidth = 1;
-          ctx.beginPath();
-          const span = 18;
-          const x0 = Math.max(0, Math.floor(hit.gx) - span);
-          const x1 = Math.min(WORLD_W, Math.ceil(hit.gx) + span);
-          const z0 = Math.max(0, Math.floor(hit.gz) - span);
-          const z1 = Math.min(WORLD_H, Math.ceil(hit.gz) + span);
-          for (let gx = x0; gx <= x1; gx++) {
-            let started = false;
-            for (let gz = z0; gz <= z1; gz += 2) {
-              const p = projectGlobePoint(gx, gz, 0.001, vw, vh);
-              if (p) {
-                if (!started) { ctx.moveTo(p.x, p.y); started = true; } else ctx.lineTo(p.x, p.y);
-              } else started = false;
-            }
-          }
-          for (let gz = z0; gz <= z1; gz++) {
-            let started = false;
-            for (let gx = x0; gx <= x1; gx += 2) {
-              const p = projectGlobePoint(gx, gz, 0.001, vw, vh);
-              if (p) {
-                if (!started) { ctx.moveTo(p.x, p.y); started = true; } else ctx.lineTo(p.x, p.y);
-              } else started = false;
-            }
-          }
-          ctx.stroke();
-        }
-      }
-
-      // 3D Orbital Diplomacy Arcs over the sphere
-      if (layers.diplomacy) {
-        const drawnPairs = new Set();
-        for (const c of state.countries) {
-          const c1 = capitalMap.get(c.id);
-          if (!c1) continue;
-          const v1 = gridToSphere(c1.gx, c1.gz, 0);
-
-          const drawArc = (targets, color, dashed, width, peakHeight) => {
-            for (const tid of (targets || [])) {
-              const pairKey = [c.id, tid].sort().join("|") + color;
-              if (drawnPairs.has(pairKey)) continue;
-              drawnPairs.add(pairKey);
-              const c2 = capitalMap.get(tid);
-              if (!c2) continue;
-              const v2 = gridToSphere(c2.gx, c2.gz, 0);
-              const dot = clamp(v1.x * v2.x + v1.y * v2.y + v1.z * v2.z, -1, 1);
-              const omega = Math.acos(dot);
-              const sinOmega = Math.sin(omega);
-
-              ctx.save();
-              ctx.strokeStyle = color;
-              ctx.lineWidth = width;
-              if (dashed) ctx.setLineDash([6, 5]);
-              ctx.beginPath();
-              let moved = false;
-              const steps = 28;
-              const arcPeak = Math.max(0.03, Math.min(0.24, omega * peakHeight));
-              for (let s = 0; s <= steps; s++) {
-                const f = s / steps;
-                let px, py, pz;
-                if (sinOmega < 0.001) {
-                  px = v1.x; py = v1.y; pz = v1.z;
-                } else {
-                  const a = Math.sin((1 - f) * omega) / sinOmega;
-                  const b = Math.sin(f * omega) / sinOmega;
-                  px = a * v1.x + b * v2.x;
-                  py = a * v1.y + b * v2.y;
-                  pz = a * v1.z + b * v2.z;
-                }
-                const lift = 1.0 + Math.sin(f * Math.PI) * arcPeak;
-                const pv = worldToGlobeView({ x: px * lift, y: py * lift, z: pz * lift });
-                const horizonZ = lift / globe.dist;
-                if (pv.z <= horizonZ) {
-                  moved = false;
-                  continue;
-                }
-                const depth = globe.dist - pv.z;
-                const focal = getGlobeFocal(vw, vh);
-                const sx = vw * 0.5 + (pv.x / depth) * focal;
-                const sy = vh * 0.5 - (pv.y / depth) * focal;
-                if (!moved) { ctx.moveTo(sx, sy); moved = true; } else ctx.lineTo(sx, sy);
-              }
-              ctx.stroke();
-              ctx.restore();
-            }
-          };
-
-          drawArc(c.tradePartners, "rgba(251, 191, 36, 0.78)", true, 1.6, 0.14);
-          drawArc(c.allies, "rgba(52, 211, 153, 0.85)", false, 2.0, 0.10);
-          drawArc(c.enemies, "rgba(248, 113, 113, 0.92)", true, 2.3, 0.18);
-        }
-      }
-
-      // 3D Capitals & Players on sphere
-      drawCapitalsAndPlayers(vw, vh, minX, minZ, (gx, gz, h) => projectGlobePoint(gx, gz, h * 0.0025, vw, vh));
-    }
-
-    // ---------------- 2.5D EXTRUDED ISOMETRIC RENDER ----------------
-    function draw25DView(vw, vh) {
-      drawBackgroundStars(vw, vh);
-
-      const minX = state ? state.world.minChunkX : -384;
-      const minZ = state ? state.world.minChunkZ : -192;
-      const gw = state ? state.world.width : WORLD_W;
-      const gh = state ? state.world.height : WORLD_H;
-
-      const s = cam.scale;
-      const cosY = Math.cos(cam.yaw25);
-      const sinY = Math.sin(cam.yaw25);
-      const tilt = cam.tilt25;
-
-      // Drop-shadow & 3D planetary slab beneath Earth map
-      const slabCorners = [
-        worldToScreen(0, 0, 0),
-        worldToScreen(gw, 0, 0),
-        worldToScreen(gw, gh, 0),
-        worldToScreen(0, gh, 0)
-      ];
-      const slabDepth = clamp(s * 5.5, 10, 26);
-
-      ctx.save();
-      ctx.fillStyle = "rgba(2, 6, 18, 0.78)";
-      ctx.beginPath();
-      slabCorners.forEach((p, i) => {
-        if (i === 0) ctx.moveTo(p.x + 12, p.y + slabDepth + 14);
-        else ctx.lineTo(p.x + 12, p.y + slabDepth + 14);
-      });
-      ctx.closePath();
-      ctx.fill();
-
-      // Extrude visible bottom sides of the map board itself
-      for (let i = 0; i < 4; i++) {
-        const a = slabCorners[i];
-        const b = slabCorners[(i + 1) % 4];
-        // Draw edge faces facing forward (higher Y edge or lower edges)
-        if ((b.x - a.x) * 1 > 0 || true) {
-          const cross = (slabCorners[(i + 2) % 4].y - a.y) * (b.x - a.x);
-          // Simply draw outer lower edges where midpoint is below center
-          const midY = (a.y + b.y) * 0.5;
-          if (midY > vh * 0.5 - 20 || true) {
-            ctx.fillStyle = i % 2 === 0 ? "#0c1932" : "#091327";
-            ctx.beginPath();
-            ctx.moveTo(a.x, a.y);
-            ctx.lineTo(b.x, b.y);
-            ctx.lineTo(b.x, b.y + slabDepth);
-            ctx.lineTo(a.x, a.y + slabDepth);
-            ctx.closePath();
-            ctx.fill();
-          }
-        }
-      }
-
-      // Affinely transformed terrain.png on top face of the 2.5D slab
-      ctx.beginPath();
-      slabCorners.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)));
-      ctx.closePath();
-      ctx.save();
-      ctx.clip();
-      ctx.setTransform(
-        (window.devicePixelRatio || 1) * (s * cosY),
-        (window.devicePixelRatio || 1) * (s * sinY * tilt),
-        (window.devicePixelRatio || 1) * (-s * sinY),
-        (window.devicePixelRatio || 1) * (s * cosY * tilt),
-        (window.devicePixelRatio || 1) * (vw * 0.5 + (-cam.x * cosY + cam.z * sinY) * s),
-        (window.devicePixelRatio || 1) * (vh * 0.5 + (-cam.x * sinY - cam.z * cosY) * s * tilt)
-      );
-      if (terrainReady) {
-        ctx.imageSmoothingEnabled = s < 2.4;
-        ctx.drawImage(terrainImg, 0, 0, gw, gh);
-      } else {
-        ctx.fillStyle = "#0e2240";
-        ctx.fillRect(0, 0, gw, gh);
-      }
-      ctx.restore();
-
-      // Subtle chunk grid in 2.5D when zoomed in
-      if (layers.grid && s >= 5.5) {
-        ctx.strokeStyle = "rgba(255, 255, 255, 0.08)";
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        const centerW = screenToWorld(vw * 0.5, vh * 0.5);
-        const spanX = Math.ceil(vw / Math.max(1, s)) + 8;
-        const spanZ = Math.ceil(vh / Math.max(1, s * tilt)) + 8;
-        const x0 = Math.max(0, Math.floor(centerW.gx - spanX));
-        const x1 = Math.min(gw, Math.ceil(centerW.gx + spanX));
-        const z0 = Math.max(0, Math.floor(centerW.gz - spanZ));
-        const z1 = Math.min(gh, Math.ceil(centerW.gz + spanZ));
-        for (let gx = x0; gx <= x1; gx++) {
-          const pA = worldToScreen(gx, z0, 0);
-          const pB = worldToScreen(gx, z1, 0);
-          ctx.moveTo(pA.x, pA.y); ctx.lineTo(pB.x, pB.y);
-        }
-        for (let gz = z0; gz <= z1; gz++) {
-          const pA = worldToScreen(x0, gz, 0);
-          const pB = worldToScreen(x1, gz, 0);
-          ctx.moveTo(pA.x, pA.y); ctx.lineTo(pB.x, pB.y);
-        }
-        ctx.stroke();
-      }
-      ctx.restore();
-
-      // Glowing border around tilted map slab
-      ctx.strokeStyle = "rgba(56, 189, 248, 0.45)";
-      ctx.lineWidth = 1.6;
-      ctx.beginPath();
-      slabCorners.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)));
-      ctx.closePath();
-      ctx.stroke();
-
-      if (!state) return;
-
-      // 2.5D Extruded Country Blocks (painter's order back-to-front by camera depth)
-      if (layers.borders && ownerGrid) {
-        // Depth vector in grid coords is (sinY, cosY) -> forward means increasing (gx*sinY + gz*cosY)
-        const dirX = sinY >= 0 ? 1 : -1;
-        const dirZ = cosY >= 0 ? 1 : -1;
-        const startX = dirX > 0 ? 0 : gw - 1;
-        const endX = dirX > 0 ? gw : -1;
-        const startZ = dirZ > 0 ? 0 : gh - 1;
-        const endZ = dirZ > 0 ? gh : -1;
-
-        const baseH = clamp(s * 3.4, 5, 19);
-        const palette = state.countries.map(c => {
-          const isFocus = c.id === selectedCountryId || c.id === hoveredCountryId;
-          const mult = (countryHeights.get(c.id) || 0.5) * (isFocus ? 1.45 : 1.0);
-          return {
-            top: hexToRgba(c.color, isFocus ? 0.82 : 0.62),
-            sideX: shadeHex(c.color, isFocus ? 0.72 : 0.56),
-            sideZ: shadeHex(c.color, isFocus ? 0.58 : 0.42),
-            edge: isFocus ? "#ffffff" : c.color,
-            h: baseH * mult,
-            isFocus
-          };
-        });
-
-        // Precompute transformed basis steps for ultra-fast cell quad projection
-        const uxX = s * cosY;
-        const uxY = s * sinY * tilt;
-        const uzX = -s * sinY;
-        const uzY = s * cosY * tilt;
-        const ox = vw * 0.5 + (-cam.x * cosY + cam.z * sinY) * s;
-        const oy = vh * 0.5 + (-cam.x * sinY - cam.z * cosY) * s * tilt;
-
-        for (let gz = startZ; gz !== endZ; gz += dirZ) {
-          for (let gx = startX; gx !== endX; gx += dirX) {
-            const idx = ownerGrid[gz * gw + gx];
-            if (idx < 0) continue;
-
-            const bx = ox + gx * uxX + gz * uzX;
-            const by = oy + gx * uxY + gz * uzY;
-            const margin = Math.max(80, s * 6);
-            if (bx < -margin || bx > vw + margin || by < -margin || by > vh + margin) continue;
-
-            const pal = palette[idx];
-            const h = pal.h;
-
-            const x00 = bx, y00 = by;
-            const x10 = bx + uxX, y10 = by + uxY;
-            const x11 = bx + uxX + uzX, y11 = by + uxY + uzY;
-            const x01 = bx + uzX, y01 = by + uzY;
-
-            // Front-facing X-wall (either +X side if dirX>0 or -X side if dirX<0)
-            const nx = gx + dirX;
-            if (nx < 0 || nx >= gw || ownerGrid[gz * gw + nx] !== idx) {
-              ctx.fillStyle = pal.sideX;
-              ctx.beginPath();
-              if (dirX > 0) {
-                ctx.moveTo(x10, y10); ctx.lineTo(x11, y11);
-                ctx.lineTo(x11, y11 - h); ctx.lineTo(x10, y10 - h);
-              } else {
-                ctx.moveTo(x00, y00); ctx.lineTo(x01, y01);
-                ctx.lineTo(x01, y01 - h); ctx.lineTo(x00, y00 - h);
-              }
-              ctx.closePath();
-              ctx.fill();
-            }
-
-            // Front-facing Z-wall
-            const nz = gz + dirZ;
-            if (nz < 0 || nz >= gh || ownerGrid[nz * gw + gx] !== idx) {
-              ctx.fillStyle = pal.sideZ;
-              ctx.beginPath();
-              if (dirZ > 0) {
-                ctx.moveTo(x01, y01); ctx.lineTo(x11, y11);
-                ctx.lineTo(x11, y11 - h); ctx.lineTo(x01, y01 - h);
-              } else {
-                ctx.moveTo(x00, y00); ctx.lineTo(x10, y10);
-                ctx.lineTo(x10, y10 - h); ctx.lineTo(x00, y00 - h);
-              }
-              ctx.closePath();
-              ctx.fill();
-            }
-
-            // Top roof face
-            ctx.fillStyle = pal.top;
-            ctx.beginPath();
-            ctx.moveTo(x00, y00 - h);
-            ctx.lineTo(x10, y10 - h);
-            ctx.lineTo(x11, y11 - h);
-            ctx.lineTo(x01, y01 - h);
-            ctx.closePath();
-            ctx.fill();
-
-            // Outer boundary highlights on roof edges
-            ctx.strokeStyle = pal.edge;
-            ctx.lineWidth = pal.isFocus ? Math.max(1.8, s * 0.2) : Math.max(1.0, Math.min(2.0, s * 0.14));
-            ctx.beginPath();
-            if (gx === 0 || ownerGrid[gz * gw + gx - 1] !== idx) {
-              ctx.moveTo(x00, y00 - h); ctx.lineTo(x01, y01 - h);
-            }
-            if (gx === gw - 1 || ownerGrid[gz * gw + gx + 1] !== idx) {
-              ctx.moveTo(x10, y10 - h); ctx.lineTo(x11, y11 - h);
-            }
-            if (gz === 0 || ownerGrid[(gz - 1) * gw + gx] !== idx) {
-              ctx.moveTo(x00, y00 - h); ctx.lineTo(x10, y10 - h);
-            }
-            if (gz === gh - 1 || ownerGrid[(gz + 1) * gw + gx] !== idx) {
-              ctx.moveTo(x01, y01 - h); ctx.lineTo(x11, y11 - h);
-            }
-            ctx.stroke();
-          }
-        }
-      }
-
-      // 2.5D Elevated Diplomacy Arcs
-      if (layers.diplomacy) {
-        drawFlatDiplomacyArcs((gx, gz, h) => worldToScreen(gx, gz, h));
-      }
-
-      // 2.5D Elevated Capitals & Players
-      const towerHeight = clamp(s * 3.4, 5, 19);
-      drawCapitalsAndPlayers(vw, vh, minX, minZ, (gx, gz, mult) => worldToScreen(gx, gz, towerHeight * mult + 10));
-    }
-
-    // ---------------- 2D CLASSIC RENDER ----------------
-    function draw2DView(vw, vh) {
-      drawBackgroundStars(vw, vh);
-
-      const minX = state ? state.world.minChunkX : -384;
-      const minZ = state ? state.world.minChunkZ : -192;
-      const gw = state ? state.world.width : WORLD_W;
-      const gh = state ? state.world.height : WORLD_H;
-
-      const topLeft = worldToScreen(0, 0);
-      const mapW = gw * cam.scale;
-      const mapH = gh * cam.scale;
-
-      if (terrainReady) {
-        ctx.imageSmoothingEnabled = cam.scale < 2.2;
-        ctx.drawImage(terrainImg, topLeft.x, topLeft.y, mapW, mapH);
-      }
-
-      ctx.strokeStyle = "rgba(56, 189, 248, 0.35)";
-      ctx.lineWidth = 1.5;
-      ctx.strokeRect(topLeft.x, topLeft.y, mapW, mapH);
-
-      if (layers.grid && cam.scale >= 6) {
-        ctx.strokeStyle = "rgba(255, 255, 255, 0.08)";
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        const startGx = Math.max(0, Math.floor(screenToWorld(0, 0).gx));
-        const endGx = Math.min(gw, Math.ceil(screenToWorld(vw, 0).gx));
-        const startGz = Math.max(0, Math.floor(screenToWorld(0, 0).gz));
-        const endGz = Math.min(gh, Math.ceil(screenToWorld(0, vh).gz));
-        for (let gx = startGx; gx <= endGx; gx++) {
-          const sx = topLeft.x + gx * cam.scale;
-          ctx.moveTo(sx, topLeft.y + startGz * cam.scale);
-          ctx.lineTo(sx, topLeft.y + endGz * cam.scale);
-        }
-        for (let gz = startGz; gz <= endGz; gz++) {
-          const sy = topLeft.y + gz * cam.scale;
-          ctx.moveTo(topLeft.x + startGx * cam.scale, sy);
-          ctx.lineTo(topLeft.x + endGx * cam.scale, sy);
-        }
-        ctx.stroke();
-      }
-
-      if (!state) return;
-
-      if (layers.borders && ownerGrid) {
-        const s = cam.scale;
-        const pad = s > 4 ? 0.35 : 0;
-        state.countries.forEach((c, idx) => {
-          const isFocus = c.id === selectedCountryId || c.id === hoveredCountryId;
-          ctx.fillStyle = hexToRgba(c.color, isFocus ? 0.68 : 0.45);
-          const cl = c.claims || [];
-          for (let i = 0; i + 1 < cl.length; i += 2) {
-            const gx = cl[i] - minX;
-            const gz = cl[i + 1] - minZ;
-            if (gx < 0 || gx >= gw || gz < 0 || gz >= gh) continue;
-            const sx = topLeft.x + gx * s;
-            const sy = topLeft.y + gz * s;
-            if (sx + s < 0 || sy + s < 0 || sx > vw || sy > vh) continue;
-            ctx.fillRect(sx, sy, s + pad, s + pad);
-          }
-
-          ctx.strokeStyle = isFocus ? "#ffffff" : c.color;
-          ctx.lineWidth = isFocus ? Math.max(2.0, Math.min(3.5, s * 0.22)) : Math.max(1.2, Math.min(2.4, s * 0.16));
-          ctx.beginPath();
-          for (let i = 0; i + 1 < cl.length; i += 2) {
-            const gx = cl[i] - minX;
-            const gz = cl[i + 1] - minZ;
-            if (gx < 0 || gx >= gw || gz < 0 || gz >= gh) continue;
-            const sx = topLeft.x + gx * s;
-            const sy = topLeft.y + gz * s;
-            if (sx + s < -4 || sy + s < -4 || sx > vw + 4 || sy > vh + 4) continue;
-            if (gx === 0 || ownerGrid[gz * gw + (gx - 1)] !== idx) {
-              ctx.moveTo(sx, sy); ctx.lineTo(sx, sy + s);
-            }
-            if (gx === gw - 1 || ownerGrid[gz * gw + (gx + 1)] !== idx) {
-              ctx.moveTo(sx + s, sy); ctx.lineTo(sx + s, sy + s);
-            }
-            if (gz === 0 || ownerGrid[(gz - 1) * gw + gx] !== idx) {
-              ctx.moveTo(sx, sy); ctx.lineTo(sx + s, sy);
-            }
-            if (gz === gh - 1 || ownerGrid[(gz + 1) * gw + gx] !== idx) {
-              ctx.moveTo(sx, sy + s); ctx.lineTo(sx + s, sy + s);
-            }
-          }
-          ctx.stroke();
-        });
-      }
-
-      if (layers.diplomacy) {
-        drawFlatDiplomacyArcs((gx, gz) => worldToScreen(gx, gz, 0));
-      }
-
-      drawCapitalsAndPlayers(vw, vh, minX, minZ, (gx, gz) => worldToScreen(gx, gz, 0));
-    }
-
-    function drawFlatDiplomacyArcs(projector) {
-      const drawnPairs = new Set();
-      for (const c of state.countries) {
-        const p1 = capitalMap.get(c.id);
-        if (!p1) continue;
-        const h1 = (countryHeights.get(c.id) || 0.5) * 14;
-        const s1 = projector(p1.gx, p1.gz, viewMode === "25d" ? h1 : 0);
-        if (!s1) continue;
-
-        const drawRel = (targets, color, dashed, width, bend) => {
-          for (const tid of (targets || [])) {
-            const pairKey = [c.id, tid].sort().join("|") + color;
-            if (drawnPairs.has(pairKey)) continue;
-            drawnPairs.add(pairKey);
-            const p2 = capitalMap.get(tid);
-            if (!p2) continue;
-            const h2 = (countryHeights.get(tid) || 0.5) * 14;
-            const s2 = projector(p2.gx, p2.gz, viewMode === "25d" ? h2 : 0);
-            if (!s2) continue;
-            const distPx = Math.hypot(s2.x - s1.x, s2.y - s1.y);
-            const mx = (s1.x + s2.x) / 2;
-            const my = (s1.y + s2.y) / 2 - distPx * bend - (viewMode === "25d" ? 18 : 0);
-            ctx.save();
-            ctx.strokeStyle = color;
-            ctx.lineWidth = width;
-            if (dashed) ctx.setLineDash([6, 5]);
-            ctx.beginPath();
-            ctx.moveTo(s1.x, s1.y);
-            ctx.quadraticCurveTo(mx, my, s2.x, s2.y);
-            ctx.stroke();
-            ctx.restore();
-          }
-        };
-
-        drawRel(c.tradePartners, "rgba(251, 191, 36, 0.75)", true, 1.5, 0.14);
-        drawRel(c.allies, "rgba(52, 211, 153, 0.85)", false, 2.0, 0.08);
-        drawRel(c.enemies, "rgba(248, 113, 113, 0.9)", true, 2.2, 0.18);
-      }
-    }
-
-    function drawCapitalsAndPlayers(vw, vh, minX, minZ, projector) {
-      if (layers.capitals) {
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        for (const c of state.countries) {
-          const cap = capitalMap.get(c.id);
-          if (!cap) continue;
-          const mult = countryHeights.get(c.id) || 0.6;
-          const base = worldToScreen(cap.gx, cap.gz, 0);
-          const pt = projector(cap.gx, cap.gz, mult);
-          if (!pt || pt.x < -80 || pt.y < -40 || pt.x > vw + 80 || pt.y > vh + 40) continue;
-
-          const selected = c.id === selectedCountryId;
-          // Beacon stem in 2.5D / 3D
-          if (base && (viewMode !== "2d") && Math.hypot(pt.x - base.x, pt.y - base.y) > 2) {
-            ctx.strokeStyle = hexToRgba(c.color, selected ? 0.95 : 0.65);
-            ctx.lineWidth = selected ? 2.0 : 1.3;
-            ctx.beginPath();
-            ctx.moveTo(base.x, base.y);
-            ctx.lineTo(pt.x, pt.y);
-            ctx.stroke();
-          }
-
-          ctx.fillStyle = selected ? "#ffffff" : c.color;
-          ctx.beginPath();
-          ctx.arc(pt.x, pt.y, selected ? 5.6 : 4.2, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.strokeStyle = "#080d18";
-          ctx.lineWidth = 1.6;
-          ctx.stroke();
-
-          const showName = viewMode === "3d"
-            ? (globe.dist < 2.75 || selected || (c.claims && c.claims.length >= 4))
-            : (cam.scale >= 1.5 || selected || (c.claims && c.claims.length >= 4));
-          if (showName) {
-            const label = (c.spawn ? "★ " : "") + c.name;
-            ctx.font = selected ? "700 12px sans-serif" : "600 11px sans-serif";
-            const tw = ctx.measureText(label).width;
-            const bx = pt.x - tw / 2 - 6;
-            const by = pt.y - 23;
-            ctx.fillStyle = selected ? "rgba(14, 116, 144, 0.92)" : "rgba(8, 13, 24, 0.84)";
-            ctx.beginPath();
-            ctx.roundRect(bx, by, tw + 12, 16, 5);
-            ctx.fill();
-            ctx.strokeStyle = selected ? "#38bdf8" : hexToRgba(c.color, 0.78);
-            ctx.lineWidth = 1;
-            ctx.stroke();
-            ctx.fillStyle = "#f8fafc";
-            ctx.fillText(label, pt.x, by + 8.5);
-          }
-        }
-      }
-
-      if (layers.players && state.players) {
-        for (const p of state.players) {
-          const gx = (p.x / 16) - minX;
-          const gz = (p.z / 16) - minZ;
-          const pt = projector(gx, gz, 0.9);
-          if (!pt || pt.x < -40 || pt.y < -40 || pt.x > vw + 40 || pt.y > vh + 40) continue;
-
-          ctx.fillStyle = "rgba(56, 189, 248, 0.28)";
-          ctx.beginPath();
-          ctx.arc(pt.x, pt.y, 9, 0, Math.PI * 2);
-          ctx.fill();
-
-          ctx.fillStyle = "#f8fafc";
-          ctx.beginPath();
-          ctx.arc(pt.x, pt.y, 4.2, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.strokeStyle = p.color || "#38bdf8";
-          ctx.lineWidth = 2;
-          ctx.stroke();
-
-          ctx.font = "600 11px sans-serif";
-          ctx.textAlign = "center";
-          ctx.fillStyle = "#e2e8f0";
-          ctx.fillText(p.name, pt.x, pt.y + 15);
-        }
-      }
-    }
-
-    // ---------------- SIDEBAR & DOSSIER ----------------
-    function renderSidebar() {
-      const container = document.getElementById("sidebarContent");
-      const controls = document.getElementById("countryControls");
-      if (!state) return;
-
-      if (activeTab === "countries") {
-        controls.style.display = "flex";
-        const q = document.getElementById("searchInput").value.trim().toLowerCase();
-        const sortBy = document.getElementById("sortSelect").value;
-        const list = state.countries.filter(c =>
-          !q || c.name.toLowerCase().includes(q) || (c.owner && c.owner.toLowerCase().includes(q))
-        );
-        list.sort((a, b) => {
-          if (sortBy === "claims") return (b.claims.length / 2) - (a.claims.length / 2);
-          if (sortBy === "rating") return (b.rating - a.rating) || (b.ratingCount - a.ratingCount);
-          if (sortBy === "treasury") return b.treasury - a.treasury;
-          return b.hourlyGdp - a.hourlyGdp;
-        });
-
-        if (list.length === 0) {
-          container.innerHTML = `<div style="padding:18px;text-align:center;color:var(--muted);font-size:12px;">Стран пока нет или ничего не найдено</div>`;
-          return;
-        }
-
-        container.innerHTML = list.map((c, idx) => {
-          const chunks = Math.floor((c.claims || []).length / 2);
-          const sel = c.id === selectedCountryId ? "selected" : "";
-          const stars = c.ratingCount > 0 ? `★${c.rating.toFixed(1)}` : "нет ★";
-          return `
-            <div class="country-row ${sel}" onclick="focusCountry('${esc(c.id)}')">
-              <div class="swatch" style="background:${esc(c.color)}"></div>
-              <div class="row-main">
-                <div class="row-title">#${idx + 1} ${esc(c.name)} ${c.online ? "🟢" : ""}</div>
-                <div class="row-sub">
-                  <span>${chunks} ч.</span>
-                  <span>${stars}</span>
-                  <span>👥 ${c.members}</span>
-                </div>
-              </div>
-              <div class="row-gdp">${fmt(c.hourlyGdp)}/ч<div style="font-size:10px;color:var(--muted);font-weight:400">${fmt(c.treasury)} ${esc(c.currencySymbol)}</div></div>
-            </div>
-          `;
-        }).join("");
-      } else if (activeTab === "players") {
-        controls.style.display = "none";
-        const players = state.players || [];
-        if (!state.showPlayers) {
-          container.innerHTML = `<div style="padding:18px;text-align:center;color:var(--muted);font-size:12px;">Отображение игроков отключено в config.yml</div>`;
-          return;
-        }
-        if (players.length === 0) {
-          container.innerHTML = `<div style="padding:18px;text-align:center;color:var(--muted);font-size:12px;">Сейчас на карте мира никого нет онлайн</div>`;
-          return;
-        }
-        container.innerHTML = players.map(p => `
-          <div class="country-row" onclick="flyToBlock(${p.x}, ${p.z})">
-            <div class="swatch" style="background:${esc(p.color)}"></div>
-            <div class="row-main">
-              <div class="row-title">${esc(p.name)}</div>
-              <div class="row-sub"><span>${p.countryName ? esc(p.countryName) : "Без страны"}</span><span>X:${p.x} Z:${p.z}</span></div>
-            </div>
-          </div>
-        `).join("");
-      } else {
-        controls.style.display = "none";
-        const events = state.chronicle || [];
-        if (events.length === 0) {
-          container.innerHTML = `<div style="padding:18px;text-align:center;color:var(--muted);font-size:12px;">Хроника мира пока пуста</div>`;
-          return;
-        }
-        container.innerHTML = events.map(ev => {
-          const dt = new Date(ev.timeMs).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
-          return `
-            <div class="chronicle-item">
-              <div class="chronicle-meta">
-                <span class="badge">${esc(ev.category)}</span>
-                <span>${esc(dt)}</span>
-              </div>
-              <div>${esc(ev.text)}</div>
-            </div>
-          `;
-        }).join("");
-      }
-    }
-
-    function renderDossier() {
-      const box = document.getElementById("dossier");
-      const c = selectedCountryId ? countryMap.get(selectedCountryId) : null;
-      if (!c) {
-        box.classList.add("hidden");
-        return;
-      }
-      box.classList.remove("hidden");
-
-      const tourismText = c.tourismOpen
-        ? (c.visitFee > 0 ? `Открыт • билет ${fmt(c.visitFee)} ${esc(c.currencySymbol)}` : "Свободный вход")
-        : "Закрыт для чужаков";
-
-      document.getElementById("dossierHeader").innerHTML = `
-        <div style="display:flex;gap:10px;align-items:center;min-width:0">
-          <div style="width:14px;height:38px;border-radius:4px;background:${esc(c.color)};flex-shrink:0;border:1px solid rgba(255,255,255,0.25)"></div>
-          <div style="min-width:0">
-            <div style="font-size:16px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(c.name)}</div>
-            <div style="font-size:11px;color:var(--muted)">Глава: ${esc(c.owner)} • ${esc(tourismText)}</div>
-          </div>
-        </div>
-        <button class="btn" onclick="closeDossier()" title="Закрыть">✕</button>
-      `;
-
-      const chunks = Math.floor((c.claims || []).length / 2);
-      const stars = c.ratingCount > 0 ? `★ ${c.rating.toFixed(1)} (${c.ratingCount})` : "Нет оценок";
-      const relChips = (ids, cls) => {
-        if (!ids || ids.length === 0) return `<span style="color:var(--muted)">Нет</span>`;
-        return ids.map(id => {
-          const other = countryMap.get(id);
-          const name = other ? other.name : id;
-          return `<span class="chip ${cls}" onclick="focusCountry('${esc(id)}')">${esc(name)}</span>`;
-        }).join("");
-      };
-
-      document.getElementById("dossierBody").innerHTML = `
-        ${c.motd ? `<div style="padding:8px 10px;border-radius:8px;background:rgba(15,23,42,0.7);border-left:3px solid ${esc(c.color)};font-style:italic">«${esc(c.motd)}»</div>` : ""}
-        <div class="stats-grid">
-          <div class="stat-box"><div class="stat-label">ВВП в час</div><div class="stat-val" style="color:#fde68a">${fmt(c.hourlyGdp)} ${esc(c.currencySymbol)}</div></div>
-          <div class="stat-box"><div class="stat-label">Казна</div><div class="stat-val" style="color:#86efac">${fmt(c.treasury)} ${esc(c.currencySymbol)}</div></div>
-          <div class="stat-box"><div class="stat-label">Территория</div><div class="stat-val">${chunks} чанков</div></div>
-          <div class="stat-box"><div class="stat-label">Рейтинг / Гости</div><div class="stat-val">${stars} • ${c.visitors}</div></div>
-        </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;background:rgba(15,23,42,0.5);padding:8px 10px;border-radius:9px;border:1px solid var(--border)">
-          <div>Чистый доход: <b>${c.netPerPayout >= 0 ? "+" : ""}${fmt(c.netPerPayout)}</b></div>
-          <div>Жителей: <b>${c.members}</b></div>
-          <div>Зданий: <b>${c.buildings}</b></div>
-          <div>Валюта: <b>${esc(c.currencyCode)} (${esc(c.currencySymbol)})</b></div>
-          <div>Альянс: <b>${c.alliance ? esc(c.alliance) : "—"}</b></div>
-          <div>Достижений: <b>${c.milestones}</b></div>
-        </div>
-        ${c.wonders && c.wonders.length > 0 ? `
-          <div>
-            <div class="section-title">Чудеса света</div>
-            <div class="chip-wrap">${c.wonders.map(w => `<span class="chip wonder">🏛 ${esc(w)}</span>`).join("")}</div>
-          </div>` : ""}
-        <div>
-          <div class="section-title">Союзники</div>
-          <div class="chip-wrap">${relChips(c.allies, "ally")}</div>
-        </div>
-        <div>
-          <div class="section-title">Торговые партнёры</div>
-          <div class="chip-wrap">${relChips(c.tradePartners, "trade")}</div>
-        </div>
-        ${c.enemies && c.enemies.length > 0 ? `
-          <div>
-            <div class="section-title">Война</div>
-            <div class="chip-wrap">${relChips(c.enemies, "enemy")}</div>
-          </div>` : ""}
-        ${c.spawn ? `<div style="color:var(--muted);font-size:11px">Столица: X=${c.spawn.x}, Z=${c.spawn.z} (/c visit ${esc(c.name)})</div>` : ""}
-      `;
-    }
-
-    window.focusCountry = function(id) {
-      selectedCountryId = id;
-      countryTexDirty = true;
-      const cap = capitalMap.get(id);
-      if (cap) {
-        animateTo(cap.gx, cap.gz, Math.max(cam.scale, 6.5));
-      }
-      renderSidebar();
-      renderDossier();
-      draw();
-    };
-
-    window.flyToBlock = function(bx, bz) {
-      if (!state) return;
-      const gx = (bx / 16) - state.world.minChunkX;
-      const gz = (bz / 16) - state.world.minChunkZ;
-      animateTo(gx, gz, Math.max(cam.scale, 8.0));
-    };
-
-    window.closeDossier = function() {
-      selectedCountryId = null;
-      countryTexDirty = true;
-      renderSidebar();
-      renderDossier();
-      draw();
-    };
-
-    // ---------------- STATE POLLING ----------------
-    function schedulePoll(ms) {
-      clearTimeout(pollTimer);
-      if (!paused) {
-        pollTimer = setTimeout(fetchState, ms);
-      }
-    }
-
-    function applyState(nextState) {
-      state = nextState;
-      rebuildIndexes();
-      const totalChunks = state.countries.reduce((acc, c) => acc + Math.floor((c.claims || []).length / 2), 0);
-      const playersCount = (state.players || []).length;
-      const suffix = gistId ? " (Gist)" : "";
-      document.getElementById("liveStats").textContent =
-        `${playersCount} онл. • ${state.countries.length} стран • ${totalChunks} ч.${suffix}`;
-      renderSidebar();
-      renderDossier();
-      draw();
-    }
-
-    async function fetchFromGist(forceManual) {
-      if (!gistId) {
-        document.getElementById("liveStats").textContent = "Укажите Gist ID";
-        document.getElementById("gistSetupBanner").style.display = "block";
-        return;
-      }
-      document.getElementById("gistSetupBanner").style.display = "none";
-
-      const useRawOnly = !forceManual && Date.now() < gistRawFallbackUntil;
-      if (!useRawOnly) {
-        const headers = {};
-        if (lastGistEtag && !forceManual) {
-          headers["If-None-Match"] = lastGistEtag;
-        }
-        const res = await fetch(`https://api.github.com/gists/${encodeURIComponent(gistId)}`, {
-          cache: "no-store",
-          headers
-        });
-        if (res.status === 304) {
-          schedulePoll(Math.max(10000, (state && state.gistPollMs) || 20000));
-          return;
-        }
-        if (res.ok) {
+          const headers = { "Accept": "application/vnd.github+json" };
+          if (lastGistEtag && !manual) headers["If-None-Match"] = lastGistEtag;
+          const res = await fetch("https://api.github.com/gists/" + encodeURIComponent(gistId), { headers });
+          if (res.status === 304) return;
+          if (!res.ok) throw new Error("GitHub Gist HTTP " + res.status);
           const etag = res.headers.get("ETag");
           if (etag) lastGistEtag = etag;
           const gistData = await res.json();
-          const files = gistData && gistData.files ? gistData.files : {};
-          const file = files["worldchill-state.json"] || Object.values(files)[0];
-          if (file) {
-            let parsed;
-            if (file.truncated && file.raw_url) {
-              const rawRes = await fetch(file.raw_url, { cache: "no-store" });
-              parsed = await rawRes.json();
-            } else if (file.content) {
-              parsed = JSON.parse(file.content);
-            }
-            if (parsed) {
-              applyState(parsed);
-            }
+          lastGistFiles = gistData.files || {};
+          const fileObj = lastGistFiles["worldchill-state.json"] || Object.values(lastGistFiles)[0];
+          if (!fileObj) throw new Error("Gist empty");
+          if (fileObj.truncated && fileObj.raw_url) {
+            const rawRes = await fetch(fileObj.raw_url + "?t=" + Date.now());
+            nextState = await rawRes.json();
+          } else {
+            nextState = JSON.parse(fileObj.content || "{}");
           }
-          schedulePoll(Math.max(10000, (state && state.gistPollMs) || 20000));
-          return;
+        } else {
+          const res = await fetch("/api/state", { cache: "no-store" });
+          if (!res.ok) throw new Error("HTTP " + res.status);
+          nextState = await res.json();
         }
-        if (res.status === 403 || res.status === 429) {
-          gistRawFallbackUntil = Date.now() + 10 * 60 * 1000;
-        }
-      }
-
-      const rawRes = await fetch(
-        `https://gist.githubusercontent.com/raw/${encodeURIComponent(gistId)}/worldchill-state.json?t=${Date.now()}`,
-        { cache: "no-store" }
-      );
-      if (rawRes.ok) {
-        applyState(await rawRes.json());
-      }
-      schedulePoll(Math.max(15000, (state && state.gistPollMs) || 20000));
-    }
-
-    async function fetchState(forceManual = false) {
-      if (paused && !forceManual) return;
-      try {
-        if (gistId || isGistMode) {
-          await fetchFromGist(forceManual);
-          return;
-        }
-        const res = await fetch("/api/state", { cache: "no-store" });
-        if (!res.ok) {
-          schedulePoll(3000);
-          return;
-        }
-        applyState(await res.json());
-        const nextMs = Math.max(1000, state.refreshMs || 2000);
-        schedulePoll(nextMs);
-      } catch (_) {
-        schedulePoll(gistId ? 20000 : 3000);
+        state = nextState;
+        rebuildIndex();
+        rebuildCountryOverlayTexture();
+        renderSidebar();
+        renderDossier();
+        updateLivePill();
+        syncLiveTiles();
+      } catch (e) {
+        document.getElementById("liveStats").textContent = "Нет связи: " + (e?.message || "err");
       }
     }
 
-    // ---------------- INTERACTION ----------------
-    let dragMode = null; // "pan" | "orbit25"
-    let dragMoved = 0;
-    let lastX = 0, lastY = 0;
+    function rebuildIndex() {
+      chunkOwnerMap.clear();
+      countryById.clear();
+      for (const c of state.countries || []) {
+        countryById.set(c.id, c);
+        if (Array.isArray(c.claims)) {
+          for (const pair of c.claims) {
+            chunkOwnerMap.set(pair[0] + "," + pair[1], c);
+          }
+        }
+      }
+      if (selectedCountryId && !countryById.has(selectedCountryId)) {
+        selectedCountryId = null;
+      }
+    }
 
-    canvas.addEventListener("contextmenu", e => {
-      if (viewMode === "25d") e.preventDefault();
-    });
+    function updateLivePill() {
+      const nCountries = (state.countries || []).length;
+      const nPlayers = (state.players || []).length;
+      const totalClaims = (state.countries || []).reduce((acc, c) => acc + (c.claims ? c.claims.length : 0), 0);
+      document.getElementById("liveStats").textContent =
+        `Стран: ${nCountries} · Чанков: ${totalClaims} · Онлайн: ${nPlayers}`;
+    }
 
-    canvas.addEventListener("mousedown", e => {
-      if (e.button === 0) {
-        dragMode = "pan";
-      } else if (e.button === 2 && viewMode === "25d") {
-        dragMode = "orbit25";
+    function schedulePoll() {
+      if (pollTimer) clearTimeout(pollTimer);
+      const delay = IS_GIST_HOST ? Math.max(12000, state.gistPollMs || 20000) : Math.max(1500, state.refreshMs || 2000);
+      pollTimer = setTimeout(async () => {
+        if (!paused) await loadState(false);
+        schedulePoll();
+      }, delay);
+    }
+
+    // ---------------- View Mode Switching & Controls ----------------
+    function updateHudVisibility() {
+      const is25 = viewMode === "25d";
+      const is3 = viewMode === "3d";
+      document.getElementById("spinBtn").style.display = is3 ? "inline-block" : "none";
+      document.getElementById("spinBtn").classList.toggle("active", cam3d.autoSpin);
+      document.getElementById("tiltDownBtn").style.display = is25 ? "inline-block" : "none";
+      document.getElementById("tiltUpBtn").style.display = is25 ? "inline-block" : "none";
+      document.getElementById("rotLeftBtn").style.display = (is25 || is3) ? "inline-block" : "none";
+      document.getElementById("rotRightBtn").style.display = (is25 || is3) ? "inline-block" : "none";
+      document.getElementById("reliefBtn").style.display = (is25 || is3) ? "inline-block" : "none";
+      document.getElementById("reliefBtn").textContent = "⛰ ×" + reliefMult;
+
+      const hint = document.getElementById("viewHint");
+      if (is25) {
+        hint.textContent = "ЛКМ — сдвиг · ПКМ/Shift — наклон и поворот 3D · Колесо — зум";
+      } else if (is3) {
+        hint.textContent = "ЛКМ — вращать глобус · Колесо — зум · Клик по стране — досье";
       } else {
-        return;
+        hint.textContent = "ЛКМ — двигать карту · Колесо — зум · Клик по стране — досье";
       }
-      dragMoved = 0;
-      lastX = e.clientX;
-      lastY = e.clientY;
-      cam.anim = null;
-      globe.anim = null;
-      if (viewMode === "3d" && globe.autoSpin) {
-        globe.autoSpin = false;
-        syncModeControls();
-      }
-      canvas.classList.add("dragging");
-    });
+      updateZoomLabel();
+    }
 
-    window.addEventListener("mousemove", e => {
-      if (dragMode) {
-        const dx = e.clientX - lastX;
-        const dy = e.clientY - lastY;
-        dragMoved += Math.abs(dx) + Math.abs(dy);
-        lastX = e.clientX;
-        lastY = e.clientY;
+    function updateZoomLabel() {
+      let pct = 100;
+      if (viewMode === "2d") pct = Math.round((cam2d.zoom / 2.0) * 100);
+      else if (viewMode === "25d") pct = Math.round((cam25.zoom / 1.8) * 100);
+      else pct = Math.round(cam3d.zoom * 100);
+      document.getElementById("zoomLabel").textContent = pct + "%";
+    }
 
-        if (viewMode === "3d") {
-          const sens = (0.0046 * (globe.dist - 0.92));
-          globe.yaw = wrapLonRad(globe.yaw - dx * sens);
-          globe.pitch = clamp(globe.pitch + dy * sens, -1.42, 1.42);
-        } else if (dragMode === "orbit25" && viewMode === "25d") {
-          cam.yaw25 += dx * 0.0065;
-          cam.tilt25 = clamp(cam.tilt25 - dy * 0.0035, 0.34, 0.96);
-        } else if (viewMode === "25d") {
-          const c = Math.cos(cam.yaw25), s = Math.sin(cam.yaw25);
-          const rx = -dx;
-          const rz = -dy / cam.tilt25;
-          cam.x += (rx * c + rz * s) / cam.scale;
-          cam.z += (-rx * s + rz * c) / cam.scale;
+    function setViewMode(mode) {
+      viewMode = mode;
+      localStorage.setItem("worldchill_view_mode", mode);
+      document.querySelectorAll(".mode-btn").forEach(b => b.classList.toggle("active", b.dataset.view === mode));
+      glCanvas.style.display = (mode === "2d") ? "none" : "block";
+      updateHudVisibility();
+    }
+
+    function focusWorldChunk(cx, cz, isReset = false) {
+      if (viewMode === "2d") {
+        cam2d.targetCx = cx;
+        cam2d.targetCz = cz;
+        if (isReset) {
+          cam2d.targetZoom = Math.max(0.85, Math.min(window.innerWidth * 0.9 / WORLD_W, window.innerHeight * 0.85 / WORLD_H));
         } else {
-          cam.x -= dx / cam.scale;
-          cam.z -= dy / cam.scale;
+          cam2d.targetZoom = Math.max(cam2d.targetZoom, 5.2);
         }
-        draw();
-        return;
-      }
-
-      if (!state) return;
-      const wpos = screenToWorld(e.clientX, e.clientY);
-      const gx = Math.floor(wpos.gx);
-      const gz = Math.floor(wpos.gz);
-      const gw = state.world.width;
-      const gh = state.world.height;
-
-      let nextHover = null;
-      if (gx >= 0 && gx < gw && gz >= 0 && gz < gh) {
-        const cx = gx + state.world.minChunkX;
-        const cz = gz + state.world.minChunkZ;
-        const bx = cx * 16 + 8;
-        const bz = cz * 16 + 8;
-        let biome = "";
-        if (biomeBytes && biomeBytes.length === gw * gh) {
-          biome = TERRAIN_NAMES[biomeBytes[gz * gw + gx]] || "";
-        }
-        document.getElementById("hoverCoords").textContent =
-          `X:${bx}, Z:${bz} (чанк ${cx}, ${cz})${biome ? " • " + biome : ""}`;
-
-        const idx = ownerGrid ? ownerGrid[gz * gw + gx] : -1;
-        if (idx >= 0 && state.countries[idx]) {
-          const c = state.countries[idx];
-          nextHover = c.id;
-          document.getElementById("hoverOwner").innerHTML =
-            `<span style="color:${esc(c.color)}">■</span> ${esc(c.name)} (${fmt(c.hourlyGdp)}/ч)`;
+      } else if (viewMode === "25d") {
+        cam25.targetCx = cx;
+        cam25.targetCz = cz;
+        if (isReset) {
+          cam25.targetZoom = 1.05;
+          cam25.targetPitch = 0.72;
         } else {
-          document.getElementById("hoverOwner").textContent = "Ничья земля";
+          cam25.targetZoom = Math.max(cam25.targetZoom, 4.8);
         }
       } else {
-        document.getElementById("hoverCoords").textContent = viewMode === "3d" ? "Космос" : "За границей карты";
-        document.getElementById("hoverOwner").textContent = "";
+        cam3d.autoSpin = false;
+        const u = (cx - MIN_CX) / WORLD_W;
+        const v = (cz - MIN_CZ) / WORLD_H;
+        cam3d.targetYaw = (0.5 - u) * Math.PI * 2;
+        cam3d.targetPitch = Math.max(-1.25, Math.min(1.25, (0.5 - v) * Math.PI));
+        cam3d.targetZoom = isReset ? 1.15 : Math.max(cam3d.targetZoom, 2.2);
+        updateHudVisibility();
+      }
+    }
+
+    function zoomBy(factor) {
+      if (viewMode === "2d") {
+        cam2d.targetZoom = Math.max(0.7, Math.min(28, cam2d.targetZoom * factor));
+      } else if (viewMode === "25d") {
+        cam25.targetZoom = Math.max(0.7, Math.min(18, cam25.targetZoom * factor));
+      } else {
+        cam3d.targetZoom = Math.max(0.72, Math.min(4.8, cam3d.targetZoom * factor));
+      }
+      updateZoomLabel();
+    }
+
+    // ---------------- WebGL Render Passes ----------------
+    function renderWebGL25D(cssW, cssH, nowSec) {
+      if (!glReady || !progTerrain25 || !meshTerrain25) return null;
+      const dist = 250 / cam25.zoom;
+      const horiz = dist * Math.cos(cam25.pitch);
+      const eyeX = cam25.cx + Math.sin(cam25.yaw) * horiz;
+      const eyeY = dist * Math.sin(cam25.pitch);
+      const eyeZ = cam25.cz + Math.cos(cam25.yaw) * horiz;
+
+      const proj = mat4Perspective(38 * Math.PI / 180, cssW / cssH, 2.0, 2200.0);
+      const view = mat4LookAt([eyeX, eyeY, eyeZ], [cam25.cx, 0, cam25.cz], [0, 1, 0]);
+      const mvp = mat4Mul(proj, view);
+
+      // Compute visible terrain mesh window quantized to prevent vertex swimming
+      const spanX = Math.min(820, 440 / cam25.zoom);
+      const spanZ = Math.min(440, 320 / cam25.zoom);
+      const qStep = Math.max(0.5, spanX / 224);
+      const snapCx = Math.round(cam25.cx / qStep) * qStep;
+      const snapCz = Math.round(cam25.cz / qStep) * qStep;
+
+      gl.viewport(0, 0, glCanvas.width, glCanvas.height);
+      gl.clearColor(0, 0, 0, 0);
+      gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+      gl.enable(gl.DEPTH_TEST);
+      gl.disable(gl.CULL_FACE);
+
+      gl.useProgram(progTerrain25);
+      gl.bindBuffer(gl.ARRAY_BUFFER, meshTerrain25.vb);
+      const aGrid = gl.getAttribLocation(progTerrain25, "aGrid");
+      gl.enableVertexAttribArray(aGrid);
+      gl.vertexAttribPointer(aGrid, 2, gl.FLOAT, false, 0, 0);
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, meshTerrain25.ib);
+
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, texColor);
+      gl.uniform1i(gl.getUniformLocation(progTerrain25, "uColorTex"), 0);
+
+      gl.activeTexture(gl.TEXTURE1);
+      gl.bindTexture(gl.TEXTURE_2D, texHeight);
+      gl.uniform1i(gl.getUniformLocation(progTerrain25, "uHeightTex"), 1);
+
+      gl.activeTexture(gl.TEXTURE2);
+      gl.bindTexture(gl.TEXTURE_2D, texCountry);
+      gl.uniform1i(gl.getUniformLocation(progTerrain25, "uCountryTex"), 2);
+
+      const reliefWorld = 18.0 * reliefMult / Math.pow(cam25.zoom, 0.28);
+      gl.uniformMatrix4fv(gl.getUniformLocation(progTerrain25, "uMvp"), false, mvp);
+      gl.uniform2f(gl.getUniformLocation(progTerrain25, "uCenter"), snapCx, snapCz);
+      gl.uniform2f(gl.getUniformLocation(progTerrain25, "uSpan"), spanX, spanZ);
+      gl.uniform1f(gl.getUniformLocation(progTerrain25, "uReliefScale"), reliefWorld);
+      gl.uniform1f(gl.getUniformLocation(progTerrain25, "uSeaNorm"), SEA_NORM);
+      gl.uniform3f(gl.getUniformLocation(progTerrain25, "uCamPos"), eyeX, eyeY, eyeZ);
+      gl.uniform1f(gl.getUniformLocation(progTerrain25, "uShowCountries"), layers.territories ? 1 : 0);
+      gl.uniform1f(gl.getUniformLocation(progTerrain25, "uShowBorders"), layers.borders ? 1 : 0);
+      gl.uniform1f(gl.getUniformLocation(progTerrain25, "uShowGrid"), layers.grid ? 1 : 0);
+      gl.uniform1f(gl.getUniformLocation(progTerrain25, "uTime"), nowSec);
+
+      gl.drawElements(gl.TRIANGLES, meshTerrain25.count, gl.UNSIGNED_SHORT, 0);
+      return { mvp, eye: [eyeX, eyeY, eyeZ], reliefWorld };
+    }
+
+    function getGlobeRotationMatrix(yaw, pitch) {
+      const cy = Math.cos(yaw), sy = Math.sin(yaw);
+      const cp = Math.cos(pitch), sp = Math.sin(pitch);
+      // Ry(yaw) then Rx(pitch)
+      return new Float32Array([
+        cy, sp * sy, -cp * sy, 0,
+        0,  cp,      sp,       0,
+        sy, -sp * cy, cp * cy, 0,
+        0,  0,       0,        1
+      ]);
+    }
+
+    function renderWebGL3D(cssW, cssH, nowSec) {
+      if (!glReady || !progGlobe3 || !meshGlobe3) return null;
+      const rot = getGlobeRotationMatrix(cam3d.yaw, cam3d.pitch);
+      const aspect = cssW / cssH;
+
+      gl.viewport(0, 0, glCanvas.width, glCanvas.height);
+      gl.clearColor(0, 0, 0, 0);
+      gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+      gl.enable(gl.DEPTH_TEST);
+      gl.enable(gl.CULL_FACE);
+      gl.cullFace(gl.BACK);
+
+      gl.useProgram(progGlobe3);
+      gl.bindBuffer(gl.ARRAY_BUFFER, meshGlobe3.pBuf);
+      const aPos = gl.getAttribLocation(progGlobe3, "aPos");
+      gl.enableVertexAttribArray(aPos);
+      gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, 0, 0);
+
+      gl.bindBuffer(gl.ARRAY_BUFFER, meshGlobe3.uBuf);
+      const aUv = gl.getAttribLocation(progGlobe3, "aUv");
+      gl.enableVertexAttribArray(aUv);
+      gl.vertexAttribPointer(aUv, 2, gl.FLOAT, false, 0, 0);
+
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, meshGlobe3.iBuf);
+
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, texColor);
+      gl.uniform1i(gl.getUniformLocation(progGlobe3, "uColorTex"), 0);
+
+      gl.activeTexture(gl.TEXTURE1);
+      gl.bindTexture(gl.TEXTURE_2D, texHeight);
+      gl.uniform1i(gl.getUniformLocation(progGlobe3, "uHeightTex"), 1);
+
+      gl.activeTexture(gl.TEXTURE2);
+      gl.bindTexture(gl.TEXTURE_2D, texCountry);
+      gl.uniform1i(gl.getUniformLocation(progGlobe3, "uCountryTex"), 2);
+
+      gl.uniformMatrix4fv(gl.getUniformLocation(progGlobe3, "uRot"), false, rot);
+      gl.uniform1f(gl.getUniformLocation(progGlobe3, "uZoom"), cam3d.zoom);
+      gl.uniform1f(gl.getUniformLocation(progGlobe3, "uAspect"), aspect);
+      gl.uniform1f(gl.getUniformLocation(progGlobe3, "uReliefScale"), reliefMult);
+      gl.uniform1f(gl.getUniformLocation(progGlobe3, "uSeaNorm"), SEA_NORM);
+      gl.uniform1f(gl.getUniformLocation(progGlobe3, "uShowCountries"), layers.territories ? 1 : 0);
+      gl.uniform1f(gl.getUniformLocation(progGlobe3, "uShowBorders"), layers.borders ? 1 : 0);
+      gl.uniform1f(gl.getUniformLocation(progGlobe3, "uTime"), nowSec);
+
+      gl.drawElements(gl.TRIANGLES, meshGlobe3.count, gl.UNSIGNED_SHORT, 0);
+      return { rot, aspect };
+    }
+
+    function projectGlobePoint(cx, cz, rot, cssW, cssH, extraR = 0.025) {
+      const u = (cx - MIN_CX) / WORLD_W;
+      const v = (cz - MIN_CZ) / WORLD_H;
+      const lam = (u - 0.5) * Math.PI * 2;
+      const phi = (0.5 - v) * Math.PI;
+      const cp = Math.cos(phi), sp = Math.sin(phi);
+      const r = 1.0 + extraR;
+      const px = r * cp * Math.sin(lam);
+      const py = r * sp;
+      const pz = r * cp * Math.cos(lam);
+
+      const rx = rot[0] * px + rot[4] * py + rot[8] * pz;
+      const ry = rot[1] * px + rot[5] * py + rot[9] * pz;
+      const rz = rot[2] * px + rot[6] * py + rot[10] * pz;
+      if (rz < 0.08) return null;
+      const aspect = cssW / cssH;
+      const zCam = rz - 2.95 / cam3d.zoom;
+      const ndcX = (rx * (1.72 / aspect)) / (-zCam);
+      const ndcY = (ry * 1.72) / (-zCam);
+      return {
+        x: (ndcX * 0.5 + 0.5) * cssW,
+        y: (0.5 - ndcY * 0.5) * cssH,
+        depth: -zCam
+      };
+    }
+
+    // ---------------- Overlay & 2D Drawing ----------------
+    function getCountryCenter(c) {
+      if (c.spawn) return { cx: c.spawn.cx, cz: c.spawn.cz };
+      if (!c.claims || c.claims.length === 0) return null;
+      let sx = 0, sz = 0;
+      for (const p of c.claims) { sx += p[0]; sz += p[1]; }
+      return { cx: sx / c.claims.length, cz: sz / c.claims.length };
+    }
+
+    function drawOverlayAnd2D(cssW, cssH, nowSec, viewInfo) {
+      ovCtx.save();
+      ovCtx.scale(dpr, dpr);
+      ovCtx.clearRect(0, 0, cssW, cssH);
+
+      if (viewMode === "2d") {
+        drawMode2D(cssW, cssH);
+      } else {
+        drawStarBackdropIfNeeded(cssW, cssH, nowSec);
+        drawProjectedOverlays(cssW, cssH, nowSec, viewInfo);
+      }
+      ovCtx.restore();
+    }
+
+    function drawStarBackdropIfNeeded(cssW, cssH, nowSec) {
+      if (viewMode !== "3d") return;
+      for (const s of stars) {
+        const alpha = s.a * (0.65 + 0.35 * Math.sin(nowSec * 1.8 + s.tw));
+        ovCtx.fillStyle = `rgba(215, 232, 255, ${alpha.toFixed(2)})`;
+        ovCtx.beginPath();
+        ovCtx.arc(s.x * cssW, s.y * cssH, s.r, 0, Math.PI * 2);
+        ovCtx.fill();
+      }
+    }
+
+    function drawMode2D(cssW, cssH) {
+      const ox = cssW / 2 - cam2d.cx * cam2d.zoom;
+      const oz = cssH / 2 - cam2d.cz * cam2d.zoom;
+      const worldLeft = ox + MIN_CX * cam2d.zoom;
+      const worldTop = oz + MIN_CZ * cam2d.zoom;
+      const worldPxW = WORLD_W * cam2d.zoom;
+      const worldPxH = WORLD_H * cam2d.zoom;
+
+      ovCtx.fillStyle = "#060c18";
+      ovCtx.fillRect(0, 0, cssW, cssH);
+
+      ovCtx.imageSmoothingEnabled = cam2d.zoom < 4.5;
+      ovCtx.drawImage(hill2dCanvas, worldLeft, worldTop, worldPxW, worldPxH);
+
+      // Draw crisp native 256x256 .mca tiles at zoom >= 2.5
+      if (cam2d.zoom >= 2.5) {
+        ovCtx.imageSmoothingEnabled = false;
+        for (const entry of tileCache.values()) {
+          if (!entry.colorImg) continue;
+          const tx = ox + (entry.rx * REGION_CHUNKS) * cam2d.zoom;
+          const ty = oz + (entry.rz * REGION_CHUNKS) * cam2d.zoom;
+          const tw = REGION_CHUNKS * cam2d.zoom;
+          ovCtx.drawImage(entry.colorImg, tx, ty, tw, tw);
+        }
       }
 
-      if (nextHover !== hoveredCountryId) {
-        hoveredCountryId = nextHover;
-        countryTexDirty = true;
-        draw();
+      // Territories & borders
+      if (layers.territories || layers.borders) {
+        ovCtx.save();
+        ovCtx.imageSmoothingEnabled = false;
+        if (!layers.territories) ovCtx.globalAlpha = 0.85;
+        ovCtx.drawImage(countryOverlayCanvas, worldLeft, worldTop, worldPxW, worldPxH);
+        ovCtx.restore();
       }
-    });
 
-    function findCountryAtScreen(sx, sy) {
-      if (!state) return null;
-      const vw = window.innerWidth;
-      const vh = window.innerHeight;
+      // Grid
+      if (layers.grid && cam2d.zoom >= 3.5) {
+        ovCtx.strokeStyle = "rgba(148,163,184,0.18)";
+        ovCtx.lineWidth = 1;
+        const step = cam2d.zoom >= 7 ? 1 : 8;
+        const startX = Math.max(MIN_CX, Math.floor((-ox / cam2d.zoom) / step) * step);
+        const endX = Math.min(MAX_CX + 1, Math.ceil(((cssW - ox) / cam2d.zoom) / step) * step);
+        const startZ = Math.max(MIN_CZ, Math.floor((-oz / cam2d.zoom) / step) * step);
+        const endZ = Math.min(MAX_CZ + 1, Math.ceil(((cssH - oz) / cam2d.zoom) / step) * step);
+        ovCtx.beginPath();
+        for (let cx = startX; cx <= endX; cx += step) {
+          const sx = ox + cx * cam2d.zoom;
+          ovCtx.moveTo(sx, worldTop);
+          ovCtx.lineTo(sx, worldTop + worldPxH);
+        }
+        for (let cz = startZ; cz <= endZ; cz += step) {
+          const sz = oz + cz * cam2d.zoom;
+          ovCtx.moveTo(worldLeft, sz);
+          ovCtx.lineTo(worldLeft + worldPxW, sz);
+        }
+        ovCtx.stroke();
+      }
+
+      // Diplomacy arcs
+      if (layers.diplomacy) {
+        drawDiplomacyLines2D(ox, oz);
+      }
+
+      // Capitals & names
       if (layers.capitals) {
-        let bestId = null;
-        let bestDist = 15;
-        for (const c of state.countries) {
-          const cap = capitalMap.get(c.id);
-          if (!cap) continue;
-          const mult = countryHeights.get(c.id) || 0.6;
-          const towerH = viewMode === "25d" ? clamp(cam.scale * 3.4, 5, 19) * mult + 10 : mult * 0.0025;
-          const pt = viewMode === "3d"
-            ? projectGlobePoint(cap.gx, cap.gz, towerH, vw, vh)
-            : worldToScreen(cap.gx, cap.gz, viewMode === "25d" ? towerH : 0);
+        for (const c of state.countries || []) {
+          const pt = getCountryCenter(c);
           if (!pt) continue;
-          const d = Math.hypot(pt.x - sx, pt.y - sy);
-          if (d <= bestDist) {
-            bestDist = d;
-            bestId = c.id;
-          }
+          const sx = ox + (pt.cx + 0.5) * cam2d.zoom;
+          const sz = oz + (pt.cz + 0.5) * cam2d.zoom;
+          drawCountryBadge(sx, sz, c);
         }
-        if (bestId) return bestId;
       }
-      if (ownerGrid) {
-        const wpos = screenToWorld(sx, sy);
-        const gx = Math.floor(wpos.gx);
-        const gz = Math.floor(wpos.gz);
-        const gw = state.world.width;
-        const gh = state.world.height;
-        if (gx >= 0 && gx < gw && gz >= 0 && gz < gh) {
-          const idx = ownerGrid[gz * gw + gx];
-          if (idx >= 0 && state.countries[idx]) {
-            return state.countries[idx].id;
+
+      // Players
+      if (layers.players && state.showPlayers) {
+        for (const p of state.players || []) {
+          const sx = ox + (p.bx / 16) * cam2d.zoom;
+          const sz = oz + (p.bz / 16) * cam2d.zoom;
+          drawPlayerPin(sx, sz, p);
+        }
+      }
+    }
+
+    function drawDiplomacyLines2D(ox, oz) {
+      const drawn = new Set();
+      for (const c of state.countries || []) {
+        const a = getCountryCenter(c);
+        if (!a) continue;
+        const ax = ox + (a.cx + 0.5) * cam2d.zoom;
+        const az = oz + (a.cz + 0.5) * cam2d.zoom;
+        for (const [list, color, dash] of [
+          [c.allies || [], "rgba(34,197,94,0.65)", []],
+          [c.tradePartners || [], "rgba(245,158,11,0.6)", [6, 5]],
+          [c.enemies || [], "rgba(239,68,68,0.7)", [4, 4]]
+        ]) {
+          for (const otherId of list) {
+            const pairKey = [c.id, otherId].sort().join("|") + color;
+            if (drawn.has(pairKey)) continue;
+            drawn.add(pairKey);
+            const other = countryById.get(otherId);
+            const b = other ? getCountryCenter(other) : null;
+            if (!b) continue;
+            const bx = ox + (b.cx + 0.5) * cam2d.zoom;
+            const bz = oz + (b.cz + 0.5) * cam2d.zoom;
+            ovCtx.save();
+            ovCtx.strokeStyle = color;
+            ovCtx.lineWidth = 1.6;
+            ovCtx.setLineDash(dash);
+            ovCtx.beginPath();
+            ovCtx.moveTo(ax, az);
+            ovCtx.quadraticCurveTo((ax + bx) / 2, (az + bz) / 2 - Math.hypot(bx - ax, bz - az) * 0.16, bx, bz);
+            ovCtx.stroke();
+            ovCtx.restore();
           }
         }
+      }
+    }
+
+    function drawProjectedOverlays(cssW, cssH, nowSec, viewInfo) {
+      if (!viewInfo) return;
+      const projFn = (cx, cz, elevChunks = 4) => {
+        if (viewMode === "25d") {
+          return projectPointMat4(viewInfo.mvp, cx + 0.5, elevChunks, cz + 0.5, cssW, cssH);
+        }
+        return projectGlobePoint(cx + 0.5, cz + 0.5, viewInfo.rot, cssW, cssH, 0.03 * reliefMult);
+      };
+
+      // Diplomacy arcs above 3D mountains / globe
+      if (layers.diplomacy) {
+        const drawn = new Set();
+        for (const c of state.countries || []) {
+          const a = getCountryCenter(c);
+          if (!a) continue;
+          for (const [list, color, dash] of [
+            [c.allies || [], "rgba(74,222,128,0.72)", []],
+            [c.tradePartners || [], "rgba(251,191,36,0.68)", [6, 5]],
+            [c.enemies || [], "rgba(248,113,113,0.78)", [4, 4]]
+          ]) {
+            for (const otherId of list) {
+              const k = [c.id, otherId].sort().join("|") + color;
+              if (drawn.has(k)) continue;
+              drawn.add(k);
+              const other = countryById.get(otherId);
+              const b = other ? getCountryCenter(other) : null;
+              if (!b) continue;
+              const steps = 16;
+              ovCtx.save();
+              ovCtx.strokeStyle = color;
+              ovCtx.lineWidth = 1.8;
+              ovCtx.setLineDash(dash);
+              ovCtx.beginPath();
+              let started = false;
+              for (let s = 0; s <= steps; s++) {
+                const t = s / steps;
+                const ix = a.cx + (b.cx - a.cx) * t;
+                const iz = a.cz + (b.cz - a.cz) * t;
+                const arcH = Math.sin(t * Math.PI) * Math.min(48, Math.hypot(b.cx - a.cx, b.cz - a.cz) * 0.25 + 6);
+                const pt = viewMode === "25d"
+                  ? projectPointMat4(viewInfo.mvp, ix, arcH + 4, iz, cssW, cssH)
+                  : projectGlobePoint(ix, iz, viewInfo.rot, cssW, cssH, 0.04 + Math.sin(t * Math.PI) * 0.14);
+                if (!pt) { started = false; continue; }
+                if (!started) { ovCtx.moveTo(pt.x, pt.y); started = true; }
+                else ovCtx.lineTo(pt.x, pt.y);
+              }
+              ovCtx.stroke();
+              ovCtx.restore();
+            }
+          }
+        }
+      }
+
+      // Capitals
+      if (layers.capitals) {
+        const items = [];
+        for (const c of state.countries || []) {
+          const center = getCountryCenter(c);
+          if (!center) continue;
+          const pt = projFn(center.cx, center.cz, 9.0 * reliefMult);
+          if (pt) items.push({ c, pt });
+        }
+        items.sort((a, b) => b.pt.depth - a.pt.depth);
+        for (const { c, pt } of items) {
+          drawCountryBadge(pt.x, pt.y, c);
+        }
+      }
+
+      // Online players
+      if (layers.players && state.showPlayers) {
+        for (const p of state.players || []) {
+          const pt = projFn(p.bx / 16, p.bz / 16, 7.0 * reliefMult);
+          if (pt) drawPlayerPin(pt.x, pt.y, p);
+        }
+      }
+    }
+
+    function drawCountryBadge(sx, sy, c) {
+      const isSel = c.id === selectedCountryId;
+      ovCtx.save();
+      ovCtx.beginPath();
+      ovCtx.arc(sx, sy, isSel ? 6.5 : 4.5, 0, Math.PI * 2);
+      ovCtx.fillStyle = c.color || "#38bdf8";
+      ovCtx.fill();
+      ovCtx.lineWidth = 2;
+      ovCtx.strokeStyle = isSel ? "#ffffff" : "rgba(10,16,32,0.9)";
+      ovCtx.stroke();
+
+      ovCtx.font = (isSel ? "700 13px " : "600 11px ") + 'Inter, "Segoe UI", sans-serif';
+      const label = (c.wonders?.length ? "👑 " : "") + c.name;
+      const w = ovCtx.measureText(label).width;
+      ovCtx.fillStyle = "rgba(8, 13, 28, 0.78)";
+      ovCtx.beginPath();
+      ovCtx.roundRect(sx - w / 2 - 6, sy - 24, w + 12, 17, 5);
+      ovCtx.fill();
+      ovCtx.fillStyle = isSel ? "#ffffff" : "#e2e8f0";
+      ovCtx.textAlign = "center";
+      ovCtx.textBaseline = "middle";
+      ovCtx.fillText(label, sx, sy - 15.5);
+      ovCtx.restore();
+    }
+
+    function drawPlayerPin(sx, sy, p) {
+      ovCtx.save();
+      ovCtx.beginPath();
+      ovCtx.arc(sx, sy, 5, 0, Math.PI * 2);
+      ovCtx.fillStyle = "#38bdf8";
+      ovCtx.fill();
+      ovCtx.lineWidth = 2;
+      ovCtx.strokeStyle = "#ffffff";
+      ovCtx.stroke();
+
+      ovCtx.font = '600 11px Inter, "Segoe UI", sans-serif';
+      const w = ovCtx.measureText(p.name).width;
+      ovCtx.fillStyle = "rgba(15, 23, 42, 0.85)";
+      ovCtx.beginPath();
+      ovCtx.roundRect(sx - w / 2 - 5, sy + 7, w + 10, 15, 4);
+      ovCtx.fill();
+      ovCtx.fillStyle = "#bae6fd";
+      ovCtx.textAlign = "center";
+      ovCtx.textBaseline = "middle";
+      ovCtx.fillText(p.name, sx, sy + 14.5);
+      ovCtx.restore();
+    }
+
+    // ---------------- Picking & Hover Coordinate Raycasting ----------------
+    function screenToChunk(sx, sy) {
+      const cssW = window.innerWidth;
+      const cssH = window.innerHeight;
+      if (viewMode === "2d") {
+        const ox = cssW / 2 - cam2d.cx * cam2d.zoom;
+        const oz = cssH / 2 - cam2d.cz * cam2d.zoom;
+        return {
+          cx: Math.floor((sx - ox) / cam2d.zoom),
+          cz: Math.floor((sy - oz) / cam2d.zoom)
+        };
+      }
+      if (viewMode === "25d" && last25View) {
+        // Intersect ray with ground plane y = 0 in 2.5D
+        const dist = 250 / cam25.zoom;
+        const horiz = dist * Math.cos(cam25.pitch);
+        const eye = [
+          cam25.cx + Math.sin(cam25.yaw) * horiz,
+          dist * Math.sin(cam25.pitch),
+          cam25.cz + Math.cos(cam25.yaw) * horiz
+        ];
+        const target = [cam25.cx, 0, cam25.cz];
+        let fx = target[0] - eye[0], fy = target[1] - eye[1], fz = target[2] - eye[2];
+        const fl = Math.hypot(fx, fy, fz) || 1;
+        fx /= fl; fy /= fl; fz /= fl;
+        let rx = fz, ry = 0, rz = -fx;
+        const rl = Math.hypot(rx, rz) || 1;
+        rx /= rl; rz /= rl;
+        const ux = ry * fz - rz * fy;
+        const uy = rz * fx - rx * fz;
+        const uz = rx * fy - ry * fx;
+
+        const tanFov = Math.tan(19 * Math.PI / 180);
+        const aspect = cssW / cssH;
+        const ndcX = (sx / cssW) * 2 - 1;
+        const ndcY = 1 - (sy / cssH) * 2;
+        const dx = fx + rx * (ndcX * aspect * tanFov) + ux * (ndcY * tanFov);
+        const dy = fy + ry * (ndcX * aspect * tanFov) + uy * (ndcY * tanFov);
+        const dz = fz + rz * (ndcX * aspect * tanFov) + uz * (ndcY * tanFov);
+        if (dy >= -0.02) return null;
+        const t = -eye[1] / dy;
+        const wx = eye[0] + dx * t;
+        const wz = eye[2] + dz * t;
+        return { cx: Math.floor(wx), cz: Math.floor(wz) };
+      }
+      if (viewMode === "3d") {
+        // Quick ray-sphere intersection
+        const aspect = cssW / cssH;
+        const ndcX = (sx / cssW) * 2 - 1;
+        const ndcY = 1 - (sy / cssH) * 2;
+        const rx = ndcX * (aspect / 1.72);
+        const ry = ndcY / 1.72;
+        const zCenter = 2.95 / cam3d.zoom;
+        const dirLen = Math.hypot(rx, ry, -1);
+        const dx = rx / dirLen, dy = ry / dirLen, dz = -1 / dirLen;
+        const oz = zCenter;
+        const b = oz * dz;
+        const c = oz * oz - 1;
+        const disc = b * b - c;
+        if (disc < 0) return null;
+        const t = -b - Math.sqrt(disc);
+        const hx = dx * t, hy = dy * t, hz = oz + dz * t;
+        const rot = getGlobeRotationMatrix(cam3d.yaw, cam3d.pitch);
+        // Transpose rot * h
+        const lx = rot[0] * hx + rot[1] * hy + rot[2] * hz;
+        const ly = rot[4] * hx + rot[5] * hy + rot[6] * hz;
+        const lz = rot[8] * hx + rot[9] * hy + rot[10] * hz;
+        const phi = Math.asin(Math.max(-1, Math.min(1, ly)));
+        const lam = Math.atan2(lx, lz);
+        const u = lam / (Math.PI * 2) + 0.5;
+        const v = 0.5 - phi / Math.PI;
+        return {
+          cx: Math.floor(MIN_CX + u * WORLD_W),
+          cz: Math.floor(MIN_CZ + v * WORLD_H)
+        };
       }
       return null;
     }
 
-    window.addEventListener("mouseup", e => {
-      if (!dragMode) return;
-      const wasPan = dragMode === "pan";
-      dragMode = null;
-      canvas.classList.remove("dragging");
-      if (wasPan && dragMoved <= 5 && state) {
-        selectedCountryId = findCountryAtScreen(e.clientX, e.clientY);
-        countryTexDirty = true;
-        renderSidebar();
-        renderDossier();
-        draw();
-      }
-    });
-
-    canvas.addEventListener("touchstart", e => {
-      if (e.touches.length === 1) {
-        dragMode = "pan";
-        dragMoved = 0;
-        lastX = e.touches[0].clientX;
-        lastY = e.touches[0].clientY;
-        cam.anim = null;
-        globe.anim = null;
-        if (viewMode === "3d" && globe.autoSpin) {
-          globe.autoSpin = false;
-          syncModeControls();
-        }
-      }
-    }, { passive: true });
-
-    canvas.addEventListener("touchmove", e => {
-      if (!dragMode || e.touches.length !== 1) return;
-      const dx = e.touches[0].clientX - lastX;
-      const dy = e.touches[0].clientY - lastY;
-      dragMoved += Math.abs(dx) + Math.abs(dy);
-      lastX = e.touches[0].clientX;
-      lastY = e.touches[0].clientY;
-      if (viewMode === "3d") {
-        const sens = 0.005 * (globe.dist - 0.9);
-        globe.yaw = wrapLonRad(globe.yaw - dx * sens);
-        globe.pitch = clamp(globe.pitch + dy * sens, -1.42, 1.42);
-      } else if (viewMode === "25d") {
-        const c = Math.cos(cam.yaw25), s = Math.sin(cam.yaw25);
-        const rx = -dx, rz = -dy / cam.tilt25;
-        cam.x += (rx * c + rz * s) / cam.scale;
-        cam.z += (-rx * s + rz * c) / cam.scale;
-      } else {
-        cam.x -= dx / cam.scale;
-        cam.z -= dy / cam.scale;
-      }
-      draw();
-    }, { passive: true });
-
-    canvas.addEventListener("touchend", e => {
-      if (!dragMode) return;
-      dragMode = null;
-      if (dragMoved <= 8 && state && e.changedTouches.length > 0) {
-        selectedCountryId = findCountryAtScreen(e.changedTouches[0].clientX, e.changedTouches[0].clientY);
-        countryTexDirty = true;
-        renderSidebar();
-        renderDossier();
-        draw();
-      }
-    });
-
-    canvas.addEventListener("wheel", e => {
-      e.preventDefault();
-      cam.anim = null;
-      globe.anim = null;
-      if (viewMode === "3d") {
-        const factor = e.deltaY < 0 ? 0.88 : 1.13;
-        globe.dist = clamp(1.0 + (globe.dist - 1.0) * factor, 1.12, 4.2);
-        updateZoomLabel();
-        draw();
+    function updateHoverHud(sx, sy) {
+      const ch = screenToChunk(sx, sy);
+      hoveredChunk = ch;
+      if (!ch || ch.cx < MIN_CX || ch.cx > MAX_CX || ch.cz < MIN_CZ || ch.cz > MAX_CZ) {
+        document.getElementById("hoverCoords").textContent = "За пределами карты Земли";
+        document.getElementById("hoverOwner").textContent = "";
         return;
       }
-      const factor = e.deltaY < 0 ? 1.18 : 1 / 1.18;
-      const before = screenToWorld(e.clientX, e.clientY);
-      cam.scale = Math.max(0.7, Math.min(48, cam.scale * factor));
-      const after = screenToWorld(e.clientX, e.clientY);
-      cam.x += before.gx - after.gx;
-      cam.z += before.gz - after.gz;
-      updateZoomLabel();
-      draw();
+      const bx = ch.cx * 16 + 8;
+      const bz = ch.cz * 16 + 8;
+      const bNames = ["Океан", "Побережье", "Горы/Снег", "Лес", "Пустыня", "Равнина"];
+      const bName = bNames[biomeAtGrid(ch.cx - MIN_CX, ch.cz - MIN_CZ)] || "Земля";
+      document.getElementById("hoverCoords").textContent = `Чанк ${ch.cx}, ${ch.cz} · X:${bx} Z:${bz} (${bName})`;
+      const owner = chunkOwnerMap.get(ch.cx + "," + ch.cz);
+      const ownerEl = document.getElementById("hoverOwner");
+      if (owner) {
+        ownerEl.textContent = "⚑ " + owner.name;
+        ownerEl.style.color = owner.color || "#38bdf8";
+      } else {
+        ownerEl.textContent = "Свободная земля";
+        ownerEl.style.color = "#94a3b8";
+      }
+    }
+
+    // ---------------- Mouse / Touch / Keyboard Interactions ----------------
+    let dragMode = null; // "pan" | "orbit"
+    let dragStart = { x: 0, y: 0 };
+    let dragMoved = false;
+
+    ovCanvas.addEventListener("contextmenu", e => e.preventDefault());
+    ovCanvas.addEventListener("pointerdown", e => {
+      ovCanvas.setPointerCapture(e.pointerId);
+      dragStart = { x: e.clientX, y: e.clientY };
+      dragMoved = false;
+      if (viewMode === "25d" && (e.button === 2 || e.button === 1 || e.shiftKey)) {
+        dragMode = "orbit";
+      } else {
+        dragMode = "pan";
+      }
+      ovCanvas.classList.add("dragging");
+    });
+
+    ovCanvas.addEventListener("pointermove", e => {
+      updateHoverHud(e.clientX, e.clientY);
+      if (!dragMode) return;
+      const dx = e.clientX - dragStart.x;
+      const dy = e.clientY - dragStart.y;
+      if (Math.hypot(dx, dy) > 3) dragMoved = true;
+      dragStart = { x: e.clientX, y: e.clientY };
+
+      if (viewMode === "2d") {
+        cam2d.targetCx -= dx / cam2d.zoom;
+        cam2d.targetCz -= dy / cam2d.zoom;
+        cam2d.cx = cam2d.targetCx;
+        cam2d.cz = cam2d.targetCz;
+      } else if (viewMode === "25d") {
+        if (dragMode === "orbit") {
+          cam25.targetYaw -= dx * 0.0065;
+          cam25.targetPitch = Math.max(0.24, Math.min(1.36, cam25.targetPitch + dy * 0.0055));
+        } else {
+          const spd = 0.45 / cam25.zoom;
+          const cy = Math.cos(cam25.yaw), sy = Math.sin(cam25.yaw);
+          cam25.targetCx += (-dx * cy - dy * sy) * spd;
+          cam25.targetCz += (dx * sy - dy * cy) * spd;
+          cam25.targetCx = Math.max(MIN_CX, Math.min(MAX_CX, cam25.targetCx));
+          cam25.targetCz = Math.max(MIN_CZ, Math.min(MAX_CZ, cam25.targetCz));
+        }
+      } else {
+        cam3d.autoSpin = false;
+        updateHudVisibility();
+        cam3d.targetYaw -= dx * 0.0055 / Math.sqrt(cam3d.zoom);
+        cam3d.targetPitch = Math.max(-1.35, Math.min(1.35, cam3d.targetPitch + dy * 0.0055 / Math.sqrt(cam3d.zoom)));
+      }
+    });
+
+    ovCanvas.addEventListener("pointerup", e => {
+      if (!dragMoved && e.button === 0) {
+        const ch = screenToChunk(e.clientX, e.clientY);
+        if (ch) {
+          const owner = chunkOwnerMap.get(ch.cx + "," + ch.cz);
+          if (owner) {
+            selectedCountryId = owner.id;
+            rebuildCountryOverlayTexture();
+            renderSidebar();
+            renderDossier();
+          }
+        }
+      }
+      dragMode = null;
+      ovCanvas.classList.remove("dragging");
+    });
+
+    ovCanvas.addEventListener("wheel", e => {
+      e.preventDefault();
+      zoomBy(e.deltaY < 0 ? 1.18 : 1 / 1.18);
     }, { passive: false });
 
-    // ---------------- TOOLBAR CONTROLS ----------------
-    document.querySelectorAll("[data-view]").forEach(btn => {
-      btn.addEventListener("click", () => setViewMode(btn.dataset.view));
-    });
+    // ---------------- Sidebar, Dossier & Button Bindings ----------------
+    function fmtMoney(v) {
+      return Number(v || 0).toLocaleString("ru-RU", { maximumFractionDigits: 2 });
+    }
+    function esc(s) {
+      return String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    }
 
+    function renderSidebar() {
+      const box = document.getElementById("sidebarContent");
+      document.getElementById("countryControls").style.display = activeTab === "countries" ? "flex" : "none";
+
+      if (activeTab === "countries") {
+        const q = (document.getElementById("searchInput").value || "").trim().toLowerCase();
+        const sortBy = document.getElementById("sortSelect").value;
+        let list = [...(state.countries || [])];
+        if (q) list = list.filter(c => c.name.toLowerCase().includes(q) || c.owner.toLowerCase().includes(q));
+        list.sort((a, b) => {
+          if (sortBy === "claims") return (b.claims?.length || 0) - (a.claims?.length || 0);
+          if (sortBy === "rating") return (b.rating || 0) - (a.rating || 0);
+          if (sortBy === "treasury") return (b.treasury || 0) - (a.treasury || 0);
+          return (b.hourlyGdp || 0) - (a.hourlyGdp || 0);
+        });
+        if (!list.length) {
+          box.innerHTML = `<div style="padding:16px;color:var(--muted);font-size:12px;">Стран пока нет.</div>`;
+          return;
+        }
+        box.innerHTML = list.map(c => `
+          <div class="country-row ${c.id === selectedCountryId ? "selected" : ""}" data-cid="${esc(c.id)}">
+            <div class="swatch" style="background:${esc(c.color)}"></div>
+            <div class="row-main">
+              <div class="row-title">${c.wonders?.length ? "👑 " : ""}${esc(c.name)}</div>
+              <div class="row-sub">
+                <span>${c.online ? "🟢 Онлайн" : "⚫ Оффлайн"}</span>
+                <span>⚑ ${c.claims?.length || 0} ч.</span>
+                <span>★ ${Number(c.rating || 0).toFixed(1)}</span>
+              </div>
+            </div>
+            <div class="row-gdp">
+              <div>${fmtMoney(c.hourlyGdp)}/ч</div>
+              <div style="font-size:10px;color:var(--muted);font-weight:500">${esc(c.currencyCode || "")}</div>
+            </div>
+          </div>
+        `).join("");
+        box.querySelectorAll(".country-row").forEach(el => {
+          el.addEventListener("click", () => selectCountry(el.dataset.cid, true));
+        });
+      } else if (activeTab === "players") {
+        const list = state.players || [];
+        if (!list.length) {
+          box.innerHTML = `<div style="padding:16px;color:var(--muted);font-size:12px;">Сейчас нет игроков онлайн.</div>`;
+          return;
+        }
+        box.innerHTML = list.map(p => `
+          <div class="country-row" data-px="${p.cx}" data-pz="${p.cz}">
+            <div class="swatch" style="background:${esc(p.countryColor || "#38bdf8")}"></div>
+            <div class="row-main">
+              <div class="row-title">${esc(p.name)}</div>
+              <div class="row-sub">
+                <span>${p.countryName ? esc(p.countryName) : "Без страны"}</span>
+                <span>X:${p.bx} Z:${p.bz}</span>
+              </div>
+            </div>
+          </div>
+        `).join("");
+        box.querySelectorAll(".country-row").forEach(el => {
+          el.addEventListener("click", () => focusWorldChunk(Number(el.dataset.px), Number(el.dataset.pz)));
+        });
+      } else {
+        const list = state.chronicle || [];
+        if (!list.length) {
+          box.innerHTML = `<div style="padding:16px;color:var(--muted);font-size:12px;">Хроника мира пока пуста.</div>`;
+          return;
+        }
+        box.innerHTML = list.map(ev => `
+          <div class="chronicle-item">
+            <div class="chronicle-meta">
+              <span class="badge">${esc(ev.category || "Событие")}</span>
+              <span>${new Date(ev.timestampMs || Date.now()).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}</span>
+            </div>
+            <div>${esc(ev.text || "")}</div>
+          </div>
+        `).join("");
+      }
+    }
+
+    function selectCountry(cid, flyTo) {
+      selectedCountryId = cid;
+      rebuildCountryOverlayTexture();
+      renderSidebar();
+      renderDossier();
+      const c = countryById.get(cid);
+      if (c && flyTo) {
+        const pt = getCountryCenter(c);
+        if (pt) focusWorldChunk(pt.cx, pt.cz);
+      }
+    }
+
+    function renderDossier() {
+      const card = document.getElementById("dossier");
+      const c = selectedCountryId ? countryById.get(selectedCountryId) : null;
+      if (!c) {
+        card.classList.add("hidden");
+        return;
+      }
+      card.classList.remove("hidden");
+      document.getElementById("dossierHeader").innerHTML = `
+        <div style="display:flex;align-items:center;gap:9px;min-width:0;">
+          <div style="width:14px;height:28px;border-radius:4px;background:${esc(c.color)};flex-shrink:0;"></div>
+          <div style="min-width:0;">
+            <div style="font-weight:700;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(c.name)}</div>
+            <div style="font-size:11px;color:var(--muted);">Глава: ${esc(c.owner)} · ${c.members} жит.</div>
+          </div>
+        </div>
+        <button class="btn" id="closeDossierBtn">✕</button>
+      `;
+      document.getElementById("closeDossierBtn").onclick = () => {
+        selectedCountryId = null;
+        rebuildCountryOverlayTexture();
+        renderSidebar();
+        renderDossier();
+      };
+
+      const renderRelChips = (ids, cls) => {
+        if (!ids || !ids.length) return `<span style="color:var(--muted)">Нет</span>`;
+        return ids.map(id => {
+          const other = countryById.get(id);
+          const name = other ? other.name : id;
+          return `<span class="chip ${cls}" data-rel="${esc(id)}">${esc(name)}</span>`;
+        }).join("");
+      };
+
+      document.getElementById("dossierBody").innerHTML = `
+        ${c.motd ? `<div style="padding:8px 10px;border-radius:8px;background:rgba(15,23,42,0.75);border:1px solid var(--border);font-style:italic;color:#cbd5e1;">«${esc(c.motd)}»</div>` : ""}
+        <div class="stats-grid">
+          <div class="stat-box"><div class="stat-label">ВВП / час</div><div class="stat-val" style="color:#fde68a">${fmtMoney(c.hourlyGdp)}</div></div>
+          <div class="stat-box"><div class="stat-label">Казна</div><div class="stat-val" style="color:#86efac">${fmtMoney(c.treasury)}</div></div>
+          <div class="stat-box"><div class="stat-label">Территория</div><div class="stat-val">${c.claims?.length || 0} чанк.</div></div>
+          <div class="stat-box"><div class="stat-label">Здания / Вехи</div><div class="stat-val">${c.buildings || 0} / ${c.milestones || 0}</div></div>
+          <div class="stat-box"><div class="stat-label">Валюта</div><div class="stat-val">${esc(c.currencySymbol || "")} ${esc(c.currencyCode || "")}</div></div>
+          <div class="stat-box"><div class="stat-label">Рейтинг / Туристы</div><div class="stat-val">★ ${Number(c.rating || 0).toFixed(1)} (${c.visitors || 0})</div></div>
+        </div>
+        ${c.alliance ? `<div><div class="section-title">Альянс</div><span class="chip ally">🛡 ${esc(c.alliance)}</span></div>` : ""}
+        ${c.wonders?.length ? `<div><div class="section-title">Чудеса света</div><div class="chip-wrap">${c.wonders.map(w => `<span class="chip wonder">🏛 ${esc(w)}</span>`).join("")}</div></div>` : ""}
+        <div><div class="section-title">Союзники</div><div class="chip-wrap">${renderRelChips(c.allies, "ally")}</div></div>
+        <div><div class="section-title">Торговые партнёры</div><div class="chip-wrap">${renderRelChips(c.tradePartners, "trade")}</div></div>
+        <div><div class="section-title">Война / Враги</div><div class="chip-wrap">${renderRelChips(c.enemies, "enemy")}</div></div>
+      `;
+      document.getElementById("dossierBody").querySelectorAll(".chip[data-rel]").forEach(el => {
+        el.addEventListener("click", () => {
+          if (countryById.has(el.dataset.rel)) selectCountry(el.dataset.rel, true);
+        });
+      });
+    }
+
+    // Bind buttons
+    document.querySelectorAll(".mode-btn").forEach(btn => btn.addEventListener("click", () => setViewMode(btn.dataset.view)));
     document.querySelectorAll("[data-layer]").forEach(btn => {
       btn.addEventListener("click", () => {
-        const key = btn.dataset.layer;
-        layers[key] = !layers[key];
-        btn.classList.toggle("active", layers[key]);
-        draw();
+        const k = btn.dataset.layer;
+        layers[k] = !layers[k];
+        btn.classList.toggle("active", layers[k]);
+        if (k === "territories" || k === "borders") rebuildCountryOverlayTexture();
       });
     });
-
     document.querySelectorAll(".tab-btn").forEach(btn => {
       btn.addEventListener("click", () => {
-        document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
-        btn.classList.add("active");
         activeTab = btn.dataset.tab;
+        document.querySelectorAll(".tab-btn").forEach(b => b.classList.toggle("active", b === btn));
         renderSidebar();
       });
     });
-
     document.getElementById("searchInput").addEventListener("input", renderSidebar);
     document.getElementById("sortSelect").addEventListener("change", renderSidebar);
     document.getElementById("toggleSidebarBtn").addEventListener("click", () => {
       document.getElementById("sidebar").classList.toggle("collapsed");
     });
-    document.getElementById("resetViewBtn").addEventListener("click", fitWorld);
-    document.getElementById("spinBtn").addEventListener("click", () => {
-      globe.autoSpin = !globe.autoSpin;
-      syncModeControls();
-    });
-    document.getElementById("rotLeftBtn").addEventListener("click", () => {
-      cam.yaw25 -= 0.25;
-      draw();
-    });
-    document.getElementById("rotRightBtn").addEventListener("click", () => {
-      cam.yaw25 += 0.25;
-      draw();
-    });
-    document.getElementById("zoomInBtn").addEventListener("click", () => {
-      if (viewMode === "3d") {
-        globe.dist = clamp(1.0 + (globe.dist - 1.0) * 0.78, 1.12, 4.2);
-      } else {
-        cam.scale = Math.min(48, cam.scale * 1.3);
-      }
-      updateZoomLabel();
-      draw();
-    });
-    document.getElementById("zoomOutBtn").addEventListener("click", () => {
-      if (viewMode === "3d") {
-        globe.dist = clamp(1.0 + (globe.dist - 1.0) * 1.28, 1.12, 4.2);
-      } else {
-        cam.scale = Math.max(0.7, cam.scale / 1.3);
-      }
-      updateZoomLabel();
-      draw();
-    });
-    document.getElementById("refreshNowBtn").addEventListener("click", () => fetchState(true));
-    document.getElementById("gistSaveBtn").addEventListener("click", () => {
-      const val = (document.getElementById("gistIdInput").value || "").trim();
-      if (!val) return;
-      gistId = val;
-      isGistMode = true;
-      lastGistEtag = null;
-      gistRawFallbackUntil = 0;
-      try { localStorage.setItem("worldchill_gist_id", val); } catch (_) {}
-      const u = new URL(window.location.href);
-      u.searchParams.set("gist", val);
-      history.replaceState(null, "", u.toString());
-      fetchState(true);
-    });
+    document.getElementById("resetViewBtn").addEventListener("click", () => focusWorldChunk(0, 0, true));
+    document.getElementById("refreshNowBtn").addEventListener("click", () => loadState(true));
     document.getElementById("pauseBtn").addEventListener("click", () => {
       paused = !paused;
-      const btn = document.getElementById("pauseBtn");
-      const dot = document.getElementById("liveDot");
-      btn.textContent = paused ? "▶ Продолжить" : "⏸ Пауза";
-      dot.classList.toggle("paused", paused);
-      if (!paused) fetchState(true);
+      document.getElementById("pauseBtn").textContent = paused ? "▶ Старт" : "⏸ Пауза";
+      document.getElementById("liveDot").classList.toggle("paused", paused);
+    });
+    document.getElementById("spinBtn").addEventListener("click", () => {
+      cam3d.autoSpin = !cam3d.autoSpin;
+      updateHudVisibility();
+    });
+    document.getElementById("tiltDownBtn").addEventListener("click", () => {
+      cam25.targetPitch = Math.max(0.24, cam25.targetPitch - 0.14);
+    });
+    document.getElementById("tiltUpBtn").addEventListener("click", () => {
+      cam25.targetPitch = Math.min(1.36, cam25.targetPitch + 0.14);
+    });
+    document.getElementById("rotLeftBtn").addEventListener("click", () => {
+      if (viewMode === "25d") cam25.targetYaw -= 0.45;
+      else { cam3d.autoSpin = false; cam3d.targetYaw -= 0.5; updateHudVisibility(); }
+    });
+    document.getElementById("rotRightBtn").addEventListener("click", () => {
+      if (viewMode === "25d") cam25.targetYaw += 0.45;
+      else { cam3d.autoSpin = false; cam3d.targetYaw += 0.5; updateHudVisibility(); }
+    });
+    document.getElementById("reliefBtn").addEventListener("click", () => {
+      reliefIndex = (reliefIndex + 1) % reliefSteps.length;
+      reliefMult = reliefSteps[reliefIndex];
+      updateHudVisibility();
+    });
+    document.getElementById("zoomInBtn").addEventListener("click", () => zoomBy(1.35));
+    document.getElementById("zoomOutBtn").addEventListener("click", () => zoomBy(1 / 1.35));
+    document.getElementById("gistSaveBtn").addEventListener("click", () => {
+      const val = document.getElementById("gistIdInput").value.trim();
+      if (!val) return;
+      gistId = val;
+      localStorage.setItem("worldchill_gist_id", val);
+      document.getElementById("gistSetupBanner").style.display = "none";
+      loadState(true);
     });
 
-    // Gentle auto-spin & twinkling stars loop in 3D Globe mode
-    let lastFrameMs = performance.now();
-    function tick3DLoop(now) {
-      const dt = Math.min(0.1, (now - lastFrameMs) * 0.001);
-      lastFrameMs = now;
-      if (viewMode === "3d" && webglReady && !dragMode && !globe.anim) {
-        if (globe.autoSpin) {
-          globe.yaw = wrapLonRad(globe.yaw + dt * 0.09);
-        }
-        draw();
+    // ---------------- Main Animation Loop ----------------
+    let lastTs = performance.now();
+    function frame(ts) {
+      const dt = Math.min(0.05, (ts - lastTs) / 1000);
+      lastTs = ts;
+      const nowSec = ts * 0.001;
+      const cssW = window.innerWidth;
+      const cssH = window.innerHeight;
+
+      // Smooth camera interpolation
+      const k = 1 - Math.exp(-dt * 10);
+      cam2d.cx += (cam2d.targetCx - cam2d.cx) * k;
+      cam2d.cz += (cam2d.targetCz - cam2d.cz) * k;
+      cam2d.zoom += (cam2d.targetZoom - cam2d.zoom) * k;
+
+      cam25.cx += (cam25.targetCx - cam25.cx) * k;
+      cam25.cz += (cam25.targetCz - cam25.cz) * k;
+      cam25.zoom += (cam25.targetZoom - cam25.zoom) * k;
+      cam25.yaw += (cam25.targetYaw - cam25.yaw) * k;
+      cam25.pitch += (cam25.targetPitch - cam25.pitch) * k;
+
+      if (viewMode === "3d" && cam3d.autoSpin && !dragMode) {
+        cam3d.targetYaw += dt * 0.065;
       }
-      globeAnimLoopId = requestAnimationFrame(tick3DLoop);
+      cam3d.yaw += (cam3d.targetYaw - cam3d.yaw) * k;
+      cam3d.pitch += (cam3d.targetPitch - cam3d.pitch) * k;
+      cam3d.zoom += (cam3d.targetZoom - cam3d.zoom) * k;
+
+      let viewInfo = null;
+      if (viewMode === "25d") {
+        viewInfo = renderWebGL25D(cssW, cssH, nowSec);
+        last25View = viewInfo;
+      } else if (viewMode === "3d") {
+        viewInfo = renderWebGL3D(cssW, cssH, nowSec);
+      }
+
+      drawOverlayAnd2D(cssW, cssH, nowSec, viewInfo);
+      requestAnimationFrame(frame);
     }
 
-    // ---------------- STARTUP ----------------
-    initWebGL();
-    if (!webglReady) {
-      viewMode = "25d";
-      document.querySelectorAll("[data-view]").forEach(b => {
-        if (b.dataset.view === "3d") b.style.display = "none";
-        b.classList.toggle("active", b.dataset.view === viewMode);
-      });
-    }
-    window.addEventListener("resize", resizeCanvas);
-
-    terrainImg.onload = () => {
-      terrainReady = true;
-      glNeedsTerrainUpload = true;
-      draw();
-    };
-    terrainImg.onerror = () => {
-      if (!terrainImg.dataset.fallbackTried) {
-        terrainImg.dataset.fallbackTried = "1";
-        terrainImg.src = "./terrain.png";
-      }
-    };
-    terrainImg.src = isGistMode ? "./terrain.png" : "/api/terrain.png";
-
-    fetch(isGistMode ? "./biomes.bin" : "/api/biomes")
-      .then(r => r.ok ? r.arrayBuffer() : fetch("./biomes.bin").then(r2 => r2.ok ? r2.arrayBuffer() : null))
-      .then(buf => {
-        if (buf) {
-          biomeBytes = new Uint8Array(buf);
-          glNeedsBiomeUpload = true;
-          draw();
-        }
-      }).catch(() => {});
-
-    resizeCanvas();
-    syncModeControls();
-    fitWorld();
-    fetchState();
-    requestAnimationFrame(tick3DLoop);
+    // Boot
+    setViewMode(viewMode);
+    loadStaticTerrain().then(() => loadState(true)).then(() => {
+      schedulePoll();
+      requestAnimationFrame(frame);
+    });
   </script>
 </body>
 </html>
