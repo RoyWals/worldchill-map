@@ -3,13 +3,13 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>WorldChill Earth — Live Политическая карта</title>
+  <title>WorldChill Earth — 3D / 2.5D Политическая карта</title>
   <style>
     :root {
-      --bg: #080d18;
-      --panel: rgba(13, 21, 38, 0.88);
-      --panel-solid: #0f182c;
-      --border: rgba(148, 163, 184, 0.18);
+      --bg: #050914;
+      --panel: rgba(11, 18, 34, 0.86);
+      --panel-solid: #0d162a;
+      --border: rgba(148, 163, 184, 0.2);
       --text: #e2e8f0;
       --muted: #94a3b8;
       --accent: #38bdf8;
@@ -20,14 +20,17 @@
     * { box-sizing: border-box; margin: 0; padding: 0; }
     html, body {
       width: 100%; height: 100%; overflow: hidden;
-      background: var(--bg); color: var(--text);
+      background: radial-gradient(circle at 50% 45%, #0c1730 0%, #050914 75%);
+      color: var(--text);
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, Arial, sans-serif;
       user-select: none;
     }
-    canvas#map {
+    canvas#globe, canvas#map {
       position: fixed; inset: 0; width: 100%; height: 100%;
-      cursor: grab; display: block;
+      display: block;
     }
+    canvas#globe { z-index: 1; pointer-events: none; }
+    canvas#map { z-index: 2; cursor: grab; background: transparent; }
     canvas#map.dragging { cursor: grabbing; }
 
     /* Top bar */
@@ -38,16 +41,16 @@
     }
     .bar-group {
       pointer-events: auto;
-      display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
-      background: var(--panel); backdrop-filter: blur(12px);
+      display: flex; align-items: center; gap: 7px; flex-wrap: wrap;
+      background: var(--panel); backdrop-filter: blur(14px);
       border: 1px solid var(--border); border-radius: 12px;
-      padding: 7px 12px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+      padding: 6px 11px; box-shadow: 0 10px 32px rgba(0, 0, 0, 0.5);
     }
-    .brand { font-weight: 700; font-size: 14px; letter-spacing: 0.2px; display: flex; align-items: center; gap: 8px; }
+    .brand { font-weight: 700; font-size: 14px; letter-spacing: 0.2px; display: flex; align-items: center; gap: 7px; }
     .live-pill {
       display: inline-flex; align-items: center; gap: 6px;
       font-size: 12px; color: #cbd5e1; padding: 3px 9px; border-radius: 999px;
-      background: rgba(15, 23, 42, 0.75); border: 1px solid var(--border);
+      background: rgba(15, 23, 42, 0.78); border: 1px solid var(--border);
     }
     .live-dot {
       width: 8px; height: 8px; border-radius: 50%; background: var(--green);
@@ -62,16 +65,31 @@
       padding: 5px 10px; font-size: 12px; font-weight: 500; cursor: pointer;
       transition: 0.15s ease;
     }
-    .btn:hover { background: rgba(51, 65, 85, 0.92); border-color: rgba(148, 163, 184, 0.35); }
-    .btn.active { background: rgba(14, 116, 144, 0.48); border-color: var(--accent); color: #e0f2fe; }
+    .btn:hover { background: rgba(51, 65, 85, 0.94); border-color: rgba(148, 163, 184, 0.4); }
+    .btn.active { background: rgba(14, 116, 144, 0.52); border-color: var(--accent); color: #e0f2fe; }
+    .mode-switch {
+      display: inline-flex; padding: 2px; border-radius: 9px;
+      background: rgba(15, 23, 42, 0.85); border: 1px solid var(--border); gap: 2px;
+    }
+    .mode-btn {
+      border: none; background: transparent; color: var(--muted);
+      padding: 4px 9px; font-size: 12px; font-weight: 700; border-radius: 7px;
+      cursor: pointer; transition: 0.16s ease;
+    }
+    .mode-btn:hover { color: var(--text); }
+    .mode-btn.active {
+      background: linear-gradient(135deg, #0284c7, #2563eb);
+      color: #ffffff;
+      box-shadow: 0 2px 10px rgba(37, 99, 235, 0.45);
+    }
 
     /* Left Sidebar */
     .sidebar {
       position: fixed; top: 68px; left: 12px; bottom: 52px; width: 325px; z-index: 15;
-      background: var(--panel); backdrop-filter: blur(12px);
+      background: var(--panel); backdrop-filter: blur(14px);
       border: 1px solid var(--border); border-radius: 14px;
       display: flex; flex-direction: column; overflow: hidden;
-      box-shadow: 0 12px 34px rgba(0, 0, 0, 0.5);
+      box-shadow: 0 12px 34px rgba(0, 0, 0, 0.55);
       transition: transform 0.22s ease, opacity 0.22s ease;
     }
     .sidebar.collapsed { transform: translateX(-350px); opacity: 0; pointer-events: none; }
@@ -98,74 +116,79 @@
     .scroll-list::-webkit-scrollbar-thumb { background: rgba(148, 163, 184, 0.28); border-radius: 99px; }
 
     .country-row {
-      display: flex; align-items: center; gap: 9px; padding: 8px 10px; border-radius: 10px;
-      background: rgba(15, 23, 42, 0.55); border: 1px solid rgba(148, 163, 184, 0.1);
-      cursor: pointer; transition: 0.15s;
+      display: flex; align-items: center; gap: 10px;
+      padding: 8px 10px; border-radius: 10px; cursor: pointer;
+      background: rgba(15, 23, 42, 0.56); border: 1px solid transparent;
+      transition: 0.14s ease;
     }
-    .country-row:hover { background: rgba(30, 41, 59, 0.8); border-color: rgba(148, 163, 184, 0.28); }
-    .country-row.selected { background: rgba(14, 116, 144, 0.3); border-color: var(--accent); }
-    .swatch { width: 12px; height: 28px; border-radius: 4px; flex-shrink: 0; border: 1px solid rgba(255,255,255,0.25); }
+    .country-row:hover { background: rgba(30, 41, 59, 0.85); border-color: var(--border); }
+    .country-row.selected { background: rgba(14, 116, 144, 0.34); border-color: var(--accent); }
+    .swatch { width: 12px; height: 30px; border-radius: 4px; flex-shrink: 0; border: 1px solid rgba(255,255,255,0.2); }
     .row-main { flex: 1; min-width: 0; }
-    .row-title { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .row-sub { font-size: 11px; color: var(--muted); margin-top: 2px; display: flex; gap: 8px; flex-wrap: wrap; }
-    .row-gdp { text-align: right; font-size: 12px; font-weight: 700; color: #fde68a; white-space: nowrap; }
+    .row-title { font-weight: 600; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .row-sub { font-size: 11px; color: var(--muted); display: flex; gap: 8px; margin-top: 2px; }
+    .row-gdp { font-size: 12px; font-weight: 700; color: #fde68a; text-align: right; white-space: nowrap; }
 
     .chronicle-item {
-      padding: 8px 10px; border-radius: 9px; background: rgba(15, 23, 42, 0.55);
-      border-left: 3px solid var(--accent); font-size: 12px; line-height: 1.4;
+      padding: 9px 10px; border-radius: 10px; background: rgba(15, 23, 42, 0.62);
+      border: 1px solid var(--border); font-size: 12px; line-height: 1.4;
     }
-    .chronicle-meta { font-size: 10px; color: var(--muted); margin-bottom: 3px; display: flex; justify-content: space-between; }
+    .chronicle-meta {
+      display: flex; justify-content: space-between; font-size: 11px;
+      color: var(--muted); margin-bottom: 3px;
+    }
     .badge {
-      display: inline-block; padding: 2px 6px; border-radius: 5px; font-size: 10px; font-weight: 600;
-      background: rgba(56, 189, 248, 0.18); color: #7dd3fc;
+      display: inline-block; padding: 1px 6px; border-radius: 5px;
+      font-size: 10px; font-weight: 600; background: rgba(56, 189, 248, 0.16); color: #7dd3fc;
     }
 
     /* Right Country Dossier */
     .dossier {
-      position: fixed; top: 68px; right: 12px; width: 340px; max-height: calc(100% - 120px); z-index: 16;
+      position: fixed; top: 68px; right: 12px; width: 335px; max-height: calc(100vh - 124px); z-index: 15;
       background: var(--panel); backdrop-filter: blur(14px);
       border: 1px solid var(--border); border-radius: 14px;
-      box-shadow: 0 14px 38px rgba(0, 0, 0, 0.55);
       display: flex; flex-direction: column; overflow: hidden;
+      box-shadow: 0 14px 36px rgba(0, 0, 0, 0.55);
       transition: transform 0.2s ease, opacity 0.2s ease;
     }
-    .dossier.hidden { transform: translateX(370px); opacity: 0; pointer-events: none; }
+    .dossier.hidden { transform: translateX(360px); opacity: 0; pointer-events: none; }
     .dossier-header {
       padding: 12px 14px; border-bottom: 1px solid var(--border);
-      display: flex; align-items: flex-start; justify-content: space-between; gap: 8px;
+      display: flex; align-items: center; justify-content: space-between; gap: 10px;
     }
     .dossier-body { padding: 12px 14px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; font-size: 12px; }
     .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
     .stat-box {
-      background: rgba(15, 23, 42, 0.7); border: 1px solid var(--border);
-      border-radius: 9px; padding: 8px 10px;
+      background: rgba(15, 23, 42, 0.65); border: 1px solid var(--border);
+      border-radius: 9px; padding: 8px 9px;
     }
     .stat-label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px; }
-    .stat-val { font-size: 14px; font-weight: 700; margin-top: 2px; }
-    .section-title { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 4px; }
+    .stat-val { font-size: 13px; font-weight: 700; margin-top: 2px; }
+    .section-title { font-size: 11px; color: var(--muted); font-weight: 600; margin-bottom: 4px; text-transform: uppercase; }
     .chip-wrap { display: flex; flex-wrap: wrap; gap: 5px; }
     .chip {
-      padding: 3px 8px; border-radius: 999px; font-size: 11px;
-      background: rgba(30, 41, 59, 0.9); border: 1px solid var(--border); cursor: pointer;
+      padding: 3px 8px; border-radius: 999px; font-size: 11px; font-weight: 500;
+      border: 1px solid var(--border); background: rgba(30, 41, 59, 0.85); cursor: pointer;
     }
-    .chip:hover { border-color: var(--accent); }
-    .chip.ally { border-color: rgba(34, 197, 94, 0.45); color: #86efac; }
-    .chip.trade { border-color: rgba(245, 158, 11, 0.45); color: #fde68a; }
-    .chip.enemy { border-color: rgba(239, 68, 68, 0.45); color: #fca5a5; }
-    .chip.wonder { border-color: rgba(168, 85, 247, 0.45); color: #e9d5ff; cursor: default; }
+    .chip.ally { border-color: rgba(34, 197, 94, 0.5); color: #86efac; }
+    .chip.trade { border-color: rgba(245, 158, 11, 0.5); color: #fde68a; }
+    .chip.enemy { border-color: rgba(239, 68, 68, 0.6); color: #fca5a5; }
+    .chip.wonder { border-color: rgba(168, 85, 247, 0.55); color: #d8b4fe; cursor: default; }
 
     /* Bottom HUD */
     .bottom-hud {
-      position: fixed; bottom: 12px; left: 12px; right: 12px; z-index: 15;
-      display: flex; justify-content: space-between; align-items: flex-end; pointer-events: none;
+      position: fixed; left: 12px; right: 12px; bottom: 12px; z-index: 15;
+      display: flex; justify-content: space-between; align-items: center; gap: 10px;
+      pointer-events: none; flex-wrap: wrap;
     }
     .hud-box {
-      pointer-events: auto; background: var(--panel); backdrop-filter: blur(10px);
+      pointer-events: auto;
+      background: var(--panel); backdrop-filter: blur(12px);
       border: 1px solid var(--border); border-radius: 10px;
       padding: 7px 12px; font-size: 12px; display: flex; align-items: center; gap: 12px;
       box-shadow: 0 8px 24px rgba(0,0,0,0.45);
     }
-    .zoom-controls { display: flex; gap: 5px; }
+    .zoom-controls { display: flex; gap: 5px; align-items: center; }
     @media (max-width: 780px) {
       .sidebar { width: calc(100% - 24px); max-height: 44%; bottom: 56px; top: auto; }
       .dossier { width: calc(100% - 24px); top: 68px; max-height: 45%; }
@@ -173,12 +196,18 @@
   </style>
 </head>
 <body>
+  <canvas id="globe"></canvas>
   <canvas id="map"></canvas>
 
   <div class="topbar">
     <div class="bar-group">
       <button class="btn" id="toggleSidebarBtn" title="Скрыть/показать панель">☰ Панель</button>
       <div class="brand">🌍 WorldChill Earth</div>
+      <div class="mode-switch" title="Режим отображения карты">
+        <button class="mode-btn" data-view="2d">2D</button>
+        <button class="mode-btn" data-view="25d">2.5D</button>
+        <button class="mode-btn active" data-view="3d">🌐 3D</button>
+      </div>
       <div class="live-pill">
         <span class="live-dot" id="liveDot"></span>
         <span id="liveStats">Загрузка...</span>
@@ -235,8 +264,12 @@
     <div class="hud-box" id="hoverHud">
       <span id="hoverCoords">Наведите курсор на карту Земли</span>
       <span id="hoverOwner" style="font-weight:600"></span>
+      <span id="viewHint" style="color:var(--muted);font-size:11px;"></span>
     </div>
     <div class="hud-box zoom-controls">
+      <button class="btn" id="spinBtn" style="display:none" title="Автовращение глобуса">⟳ Крутить</button>
+      <button class="btn" id="rotLeftBtn" style="display:none" title="Повернуть карту влево">⟲</button>
+      <button class="btn" id="rotRightBtn" style="display:none" title="Повернуть карту вправо">⟳</button>
       <button class="btn" id="zoomOutBtn">−</button>
       <span id="zoomLabel" style="min-width:44px;text-align:center;color:var(--muted)">100%</span>
       <button class="btn" id="zoomInBtn">+</button>
@@ -244,6 +277,8 @@
   </div>
 
   <script>
+    const WORLD_W = 768;
+    const WORLD_H = 384;
     const TERRAIN_NAMES = [
       "Глубокий океан",
       "Вода / побережье",
@@ -254,6 +289,7 @@
       "За границей карты"
     ];
 
+    const globeCanvas = document.getElementById("globe");
     const canvas = document.getElementById("map");
     const ctx = canvas.getContext("2d");
 
@@ -271,17 +307,22 @@
     let gistRawFallbackUntil = 0;
 
     let terrainImg = new Image();
+    terrainImg.crossOrigin = "anonymous";
     let terrainReady = false;
     let biomeBytes = null;
     let state = null;
-    let ownerGrid = null; // Int16Array(768*384) -> index into state.countries or -1
+    let ownerGrid = null;
     let countryMap = new Map();
     let capitalMap = new Map();
+    let countryHeights = new Map();
     let selectedCountryId = null;
     let hoveredCountryId = null;
     let activeTab = "countries";
     let paused = false;
     let pollTimer = null;
+
+    let viewMode = "3d"; // "2d" | "25d" | "3d"
+    let webglReady = false;
 
     const layers = {
       borders: true,
@@ -292,11 +333,47 @@
     };
 
     const cam = {
-      x: 384, // world chunk grid center [0..768]
-      z: 192, // world chunk grid center [0..384]
-      scale: 2.0, // screen pixels per chunk
+      x: 384,
+      z: 192,
+      scale: 2.0,
+      yaw25: -0.48,
+      tilt25: 0.78, // cos/squash factor: lower = flatter perspective tilt
       anim: null
     };
+
+    const globe = {
+      yaw: 0.45,
+      pitch: 0.42,
+      dist: 2.55,
+      autoSpin: true,
+      anim: null
+    };
+
+    // Pre-generated background starfield for 2.5D & WebGL fallback
+    const bgStars = Array.from({ length: 160 }, (_, i) => ({
+      rx: ((Math.sin(i * 127.1 + 1.3) * 43758.5453) % 1 + 1) % 1,
+      ry: ((Math.sin(i * 311.7 + 7.9) * 24634.6345) % 1 + 1) % 1,
+      size: (i % 5 === 0) ? 1.8 : 1.0,
+      alpha: 0.25 + ((i * 17) % 60) / 100
+    }));
+
+    // Dynamic RGBA overlay texture for WebGL globe countries
+    const countryTexCanvas = document.createElement("canvas");
+    countryTexCanvas.width = WORLD_W;
+    countryTexCanvas.height = WORLD_H;
+    const countryTexCtx = countryTexCanvas.getContext("2d");
+    let countryTexDirty = true;
+    let globeAnimLoopId = null;
+
+    // WebGL context & shader handles
+    let gl = null;
+    let glProg = null;
+    let glTerrainTex = null;
+    let glBiomeTex = null;
+    let glCountryTex = null;
+    let glLocs = {};
+    let glNeedsBiomeUpload = false;
+    let glNeedsTerrainUpload = false;
 
     function esc(str) {
       if (str === null || str === undefined) return "";
@@ -314,58 +391,553 @@
       return Math.abs(n - Math.round(n)) < 0.005 ? Math.round(n).toLocaleString("ru-RU") : n.toFixed(2);
     }
 
-    function hexToRgba(hex, alpha) {
+    function hexToRgb(hex) {
       const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex || "#38bdf8");
-      if (!m) return `rgba(56,189,248,${alpha})`;
-      return `rgba(${parseInt(m[1],16)},${parseInt(m[2],16)},${parseInt(m[3],16)},${alpha})`;
+      if (!m) return [56, 189, 248];
+      return [parseInt(m[1], 16), parseInt(m[2], 16), parseInt(m[3], 16)];
     }
 
+    function hexToRgba(hex, alpha) {
+      const [r, g, b] = hexToRgb(hex);
+      return `rgba(${r},${g},${b},${alpha})`;
+    }
+
+    function shadeHex(hex, factor) {
+      const [r, g, b] = hexToRgb(hex);
+      const cl = v => Math.max(0, Math.min(255, Math.round(v)));
+      return `rgb(${cl(r * factor)},${cl(g * factor)},${cl(b * factor)})`;
+    }
+
+    function clamp(v, min, max) {
+      return Math.max(min, Math.min(max, v));
+    }
+
+    function wrapLonRad(a) {
+      while (a > Math.PI) a -= Math.PI * 2;
+      while (a < -Math.PI) a += Math.PI * 2;
+      return a;
+    }
+
+    // ---------------- WebGL 3D Globe Setup ----------------
+    function initWebGL() {
+      try {
+        gl = globeCanvas.getContext("webgl", { antialias: true, alpha: false, powerPreference: "high-performance" });
+        if (!gl) return false;
+
+        const vsSrc = `
+          attribute vec2 aPos;
+          void main() {
+            gl_Position = vec4(aPos, 0.0, 1.0);
+          }
+        `;
+
+        const fsSrc = `
+          precision highp float;
+          uniform vec2 uRes;
+          uniform float uFocal;
+          uniform float uDist;
+          uniform float uYaw;
+          uniform float uPitch;
+          uniform float uTime;
+          uniform float uHasTerrain;
+          uniform float uHasBiomes;
+          uniform float uShowBorders;
+          uniform sampler2D uTerrain;
+          uniform sampler2D uBiomes;
+          uniform sampler2D uCountry;
+
+          const float PI = 3.14159265359;
+
+          float hash21(vec2 p) {
+            p = fract(p * vec2(123.34, 456.21));
+            p += dot(p, p + 45.32);
+            return fract(p.x * p.y);
+          }
+
+          vec3 rotateInv(vec3 p) {
+            float cp = cos(uPitch);
+            float sp = sin(uPitch);
+            vec3 q = vec3(p.x, p.y * cp + p.z * sp, -p.y * sp + p.z * cp);
+            float cy = cos(uYaw);
+            float sy = sin(uYaw);
+            return vec3(q.x * cy + q.z * sy, q.y, -q.x * sy + q.z * cy);
+          }
+
+          void main() {
+            vec2 px = vec2(gl_FragCoord.x, uRes.y - gl_FragCoord.y);
+            vec2 center = uRes * 0.5;
+            vec3 rd = normalize(vec3((px.x - center.x) / uFocal, -(px.y - center.y) / uFocal, -1.0));
+            vec3 ro = vec3(0.0, 0.0, uDist);
+
+            float b = dot(ro, rd);
+            float c = uDist * uDist - 1.0;
+            float disc = b * b - c;
+
+            // Starfield background
+            vec3 spaceCol = vec3(0.016, 0.032, 0.075);
+            vec2 starCell = floor(gl_FragCoord.xy * 0.25);
+            float starVal = hash21(starCell);
+            if (starVal > 0.992) {
+              float tw = 0.55 + 0.45 * sin(uTime * 2.1 + starVal * 90.0);
+              spaceCol += vec3(0.75, 0.85, 1.0) * tw * ((starVal - 0.992) / 0.008);
+            }
+
+            if (disc < 0.0) {
+              // Closest distance from ray to sphere surface for outer atmosphere rim glow
+              float minDist = length(ro + rd * max(0.0, -b)) - 1.0;
+              float halo = exp(-max(0.0, minDist) * 14.0) * 0.72;
+              spaceCol += vec3(0.18, 0.58, 0.98) * halo;
+              gl_FragColor = vec4(spaceCol, 1.0);
+              return;
+            }
+
+            float t = -b - sqrt(disc);
+            vec3 hitView = ro + rd * t;
+            vec3 nView = normalize(hitView);
+            vec3 nWorld = rotateInv(nView);
+
+            float lat = asin(clamp(nWorld.y, -1.0, 1.0));
+            float lon = atan(nWorld.x, nWorld.z);
+            vec2 uv = vec2(lon / (2.0 * PI) + 0.5, 0.5 - lat / PI);
+
+            vec3 baseColor = vec3(0.07, 0.20, 0.36);
+            if (uHasTerrain > 0.5) {
+              baseColor = texture2D(uTerrain, uv).rgb;
+            }
+
+            float isWater = 0.0;
+            vec3 bumpN = nView;
+            if (uHasBiomes > 0.5) {
+              float bCenter = texture2D(uBiomes, uv).r * 255.0;
+              isWater = bCenter < 1.5 ? 1.0 : 0.0;
+              vec2 texel = vec2(1.0 / 768.0, 1.0 / 384.0);
+              float hL = texture2D(uBiomes, uv - vec2(texel.x, 0.0)).r * 255.0;
+              float hR = texture2D(uBiomes, uv + vec2(texel.x, 0.0)).r * 255.0;
+              float hU = texture2D(uBiomes, uv - vec2(0.0, texel.y)).r * 255.0;
+              float hD = texture2D(uBiomes, uv + vec2(0.0, texel.y)).r * 255.0;
+              float lL = hL < 1.5 ? 0.0 : (hL == 2.0 ? 1.3 : 0.85);
+              float lR = hR < 1.5 ? 0.0 : (hR == 2.0 ? 1.3 : 0.85);
+              float lU = hU < 1.5 ? 0.0 : (hU == 2.0 ? 1.3 : 0.85);
+              float lD = hD < 1.5 ? 0.0 : (hD == 2.0 ? 1.3 : 0.85);
+              float gx = (lL - lR) * 0.28;
+              float gy = (lU - lD) * 0.28;
+              bumpN = normalize(nView + vec3(gx, -gy, 0.0));
+            }
+
+            vec3 lightDir = normalize(vec3(-0.55, 0.45, 0.70));
+            vec3 viewDir = normalize(-rd);
+            float diff = max(0.18, dot(bumpN, lightDir) * 0.82 + 0.34);
+
+            // Specular ocean glint
+            vec3 halfVec = normalize(lightDir + viewDir);
+            float spec = isWater * pow(max(0.0, dot(bumpN, halfVec)), 42.0) * 0.48;
+
+            vec3 lit = baseColor * diff + vec3(0.55, 0.82, 1.0) * spec;
+
+            // Country territories + bright border highlight
+            if (uShowBorders > 0.5) {
+              vec4 ct = texture2D(uCountry, uv);
+              if (ct.a > 0.01) {
+                float fillAmt = ct.a > 0.85 ? 0.68 : 0.46;
+                lit = mix(lit, ct.rgb * (0.65 + 0.35 * diff), fillAmt);
+                if (ct.a > 0.85) {
+                  lit += ct.rgb * 0.28;
+                }
+              }
+            }
+
+            // Inner atmospheric Fresnel rim
+            float fresnel = pow(1.0 - max(0.0, dot(nView, viewDir)), 3.0);
+            lit = mix(lit, vec3(0.26, 0.72, 1.0), fresnel * 0.52);
+
+            gl_FragColor = vec4(lit, 1.0);
+          }
+        `;
+
+        const compile = (type, src) => {
+          const s = gl.createShader(type);
+          gl.shaderSource(s, src);
+          gl.compileShader(s);
+          if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+            gl.deleteShader(s);
+            return null;
+          }
+          return s;
+        };
+
+        const vs = compile(gl.VERTEX_SHADER, vsSrc);
+        const fs = compile(gl.FRAGMENT_SHADER, fsSrc);
+        if (!vs || !fs) return false;
+
+        glProg = gl.createProgram();
+        gl.attachShader(glProg, vs);
+        gl.attachShader(glProg, fs);
+        gl.linkProgram(glProg);
+        if (!gl.getProgramParameter(glProg, gl.LINK_STATUS)) return false;
+
+        const buf = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+        const aPos = gl.getAttribLocation(glProg, "aPos");
+        gl.enableVertexAttribArray(aPos);
+        gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
+
+        const makeTex = (unit, filter) => {
+          const tex = gl.createTexture();
+          gl.activeTexture(gl.TEXTURE0 + unit);
+          gl.bindTexture(gl.TEXTURE_2D, tex);
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter);
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter);
+          return tex;
+        };
+
+        glTerrainTex = makeTex(0, gl.LINEAR);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([16, 42, 72, 255]));
+
+        glBiomeTex = makeTex(1, gl.NEAREST);
+        gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.LUMINANCE, 1, 1, 0, gl.LUMINANCE, gl.UNSIGNED_BYTE, new Uint8Array([0]));
+
+        glCountryTex = makeTex(2, gl.NEAREST);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([0, 0, 0, 0]));
+
+        glLocs = {
+          uRes: gl.getUniformLocation(glProg, "uRes"),
+          uFocal: gl.getUniformLocation(glProg, "uFocal"),
+          uDist: gl.getUniformLocation(glProg, "uDist"),
+          uYaw: gl.getUniformLocation(glProg, "uYaw"),
+          uPitch: gl.getUniformLocation(glProg, "uPitch"),
+          uTime: gl.getUniformLocation(glProg, "uTime"),
+          uHasTerrain: gl.getUniformLocation(glProg, "uHasTerrain"),
+          uHasBiomes: gl.getUniformLocation(glProg, "uHasBiomes"),
+          uShowBorders: gl.getUniformLocation(glProg, "uShowBorders"),
+          uTerrain: gl.getUniformLocation(glProg, "uTerrain"),
+          uBiomes: gl.getUniformLocation(glProg, "uBiomes"),
+          uCountry: gl.getUniformLocation(glProg, "uCountry")
+        };
+
+        webglReady = true;
+        return true;
+      } catch (_) {
+        webglReady = false;
+        return false;
+      }
+    }
+
+    function updateGlobeCountryTexture() {
+      countryTexDirty = false;
+      countryTexCtx.clearRect(0, 0, WORLD_W, WORLD_H);
+      if (!state || !ownerGrid) return;
+
+      const img = countryTexCtx.createImageData(WORLD_W, WORLD_H);
+      const data = img.data;
+      const countries = state.countries;
+      const rgbs = countries.map(c => hexToRgb(c.color));
+
+      for (let gz = 0; gz < WORLD_H; gz++) {
+        for (let gx = 0; gx < WORLD_W; gx++) {
+          const i = gz * WORLD_W + gx;
+          const idx = ownerGrid[i];
+          if (idx < 0 || idx >= countries.length) continue;
+
+          const c = countries[idx];
+          const isFocus = c.id === selectedCountryId || c.id === hoveredCountryId;
+          const isEdge = gx === 0 || ownerGrid[i - 1] !== idx
+            || gx === WORLD_W - 1 || ownerGrid[i + 1] !== idx
+            || gz === 0 || ownerGrid[i - WORLD_W] !== idx
+            || gz === WORLD_H - 1 || ownerGrid[i + WORLD_W] !== idx;
+
+          const [r, g, b] = rgbs[idx];
+          const p = i * 4;
+          if (isEdge && isFocus) {
+            data[p] = 255; data[p + 1] = 255; data[p + 2] = 255; data[p + 3] = 255;
+          } else {
+            data[p] = r; data[p + 1] = g; data[p + 2] = b;
+            data[p + 3] = (isEdge || isFocus) ? 245 : 150;
+          }
+        }
+      }
+      countryTexCtx.putImageData(img, 0, 0);
+
+      if (webglReady && gl) {
+        gl.activeTexture(gl.TEXTURE2);
+        gl.bindTexture(gl.TEXTURE_2D, glCountryTex);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, countryTexCanvas);
+      }
+    }
+
+    function getGlobeFocal(vw, vh) {
+      return Math.min(vw, vh) * 0.42 * globe.dist;
+    }
+
+    function gridToSphere(gx, gz, alt = 0) {
+      const u = gx / WORLD_W;
+      const v = gz / WORLD_H;
+      const lat = (0.5 - v) * Math.PI;
+      const lon = (u - 0.5) * Math.PI * 2;
+      const r = 1.0 + alt;
+      const cl = Math.cos(lat);
+      return {
+        x: r * cl * Math.sin(lon),
+        y: r * Math.sin(lat),
+        z: r * cl * Math.cos(lon)
+      };
+    }
+
+    function worldToGlobeView(p0) {
+      const cy = Math.cos(globe.yaw), sy = Math.sin(globe.yaw);
+      const x1 = p0.x * cy - p0.z * sy;
+      const z1 = p0.x * sy + p0.z * cy;
+      const y1 = p0.y;
+      const cp = Math.cos(globe.pitch), sp = Math.sin(globe.pitch);
+      return {
+        x: x1,
+        y: y1 * cp - z1 * sp,
+        z: y1 * sp + z1 * cp
+      };
+    }
+
+    function projectGlobePoint(gx, gz, alt, vw, vh) {
+      const p0 = gridToSphere(gx, gz, alt);
+      const pv = worldToGlobeView(p0);
+      const r = 1.0 + alt;
+      // Tangent-plane horizon threshold so points cleanly vanish as they go behind Earth
+      const horizonZ = r / globe.dist;
+      if (pv.z <= horizonZ) return null;
+      const depth = globe.dist - pv.z;
+      const focal = getGlobeFocal(vw, vh);
+      return {
+        x: vw * 0.5 + (pv.x / depth) * focal,
+        y: vh * 0.5 - (pv.y / depth) * focal,
+        z: pv.z,
+        scale: focal / depth
+      };
+    }
+
+    function screenToGlobeGrid(sx, sy, vw, vh) {
+      const focal = getGlobeFocal(vw, vh);
+      const rdx = (sx - vw * 0.5) / focal;
+      const rdy = -(sy - vh * 0.5) / focal;
+      const rdz = -1.0;
+      const invLen = 1.0 / Math.hypot(rdx, rdy, rdz);
+      const dx = rdx * invLen, dy = rdy * invLen, dz = rdz * invLen;
+
+      const b = globe.dist * dz;
+      const c = globe.dist * globe.dist - 1.0;
+      const disc = b * b - c;
+      if (disc < 0) return null;
+
+      const t = -b - Math.sqrt(disc);
+      const hx = dx * t;
+      const hy = dy * t;
+      const hz = globe.dist + dz * t;
+
+      const cp = Math.cos(globe.pitch), sp = Math.sin(globe.pitch);
+      const y1 = hy * cp + hz * sp;
+      const z1 = -hy * sp + hz * cp;
+      const x1 = hx;
+
+      const cy = Math.cos(globe.yaw), syYaw = Math.sin(globe.yaw);
+      const x0 = x1 * cy + z1 * syYaw;
+      const z0 = -x1 * syYaw + z1 * cy;
+      const y0 = y1;
+
+      const lat = Math.asin(clamp(y0, -1.0, 1.0));
+      const lon = Math.atan2(x0, z0);
+      const u = lon / (Math.PI * 2) + 0.5;
+      const v = 0.5 - lat / Math.PI;
+      return {
+        gx: clamp(u * WORLD_W, 0, WORLD_W - 0.001),
+        gz: clamp(v * WORLD_H, 0, WORLD_H - 0.001),
+        latDeg: lat * 180 / Math.PI,
+        lonDeg: lon * 180 / Math.PI
+      };
+    }
+
+    // ---------------- 2D & 2.5D Projections ----------------
     function resizeCanvas() {
       const dpr = window.devicePixelRatio || 1;
-      canvas.width = Math.floor(window.innerWidth * dpr);
-      canvas.height = Math.floor(window.innerHeight * dpr);
+      const w = Math.floor(window.innerWidth * dpr);
+      const h = Math.floor(window.innerHeight * dpr);
+      canvas.width = w;
+      canvas.height = h;
+      globeCanvas.width = w;
+      globeCanvas.height = h;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      if (webglReady && gl) {
+        gl.viewport(0, 0, w, h);
+      }
       draw();
+    }
+
+    function worldToScreen(gx, gz, alt = 0) {
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      if (viewMode === "3d") {
+        return projectGlobePoint(gx, gz, alt, vw, vh);
+      }
+      if (viewMode === "25d") {
+        const dx = (gx - cam.x) * cam.scale;
+        const dz = (gz - cam.z) * cam.scale;
+        const c = Math.cos(cam.yaw25);
+        const s = Math.sin(cam.yaw25);
+        const rx = dx * c - dz * s;
+        const rz = dx * s + dz * c;
+        return {
+          x: vw * 0.5 + rx,
+          y: vh * 0.5 + rz * cam.tilt25 - alt
+        };
+      }
+      return {
+        x: vw * 0.5 + (gx - cam.x) * cam.scale,
+        y: vh * 0.5 + (gz - cam.z) * cam.scale
+      };
+    }
+
+    function screenToWorld(sx, sy) {
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      if (viewMode === "3d") {
+        const hit = screenToGlobeGrid(sx, sy, vw, vh);
+        return hit || { gx: -1, gz: -1 };
+      }
+      if (viewMode === "25d") {
+        const rx = sx - vw * 0.5;
+        const rz = (sy - vh * 0.5) / cam.tilt25;
+        const c = Math.cos(cam.yaw25);
+        const s = Math.sin(cam.yaw25);
+        const dx = rx * c + rz * s;
+        const dz = -rx * s + rz * c;
+        return {
+          gx: cam.x + dx / cam.scale,
+          gz: cam.z + dz / cam.scale
+        };
+      }
+      return {
+        gx: cam.x + (sx - vw * 0.5) / cam.scale,
+        gz: cam.z + (sy - vh * 0.5) / cam.scale
+      };
+    }
+
+    function setViewMode(nextMode) {
+      if (nextMode === "3d" && !webglReady) {
+        nextMode = "25d";
+      }
+      if (nextMode === viewMode) return;
+
+      // Preserve focus coordinates across view switches
+      if (viewMode === "3d") {
+        cam.x = clamp((globe.yaw / (Math.PI * 2) + 0.5) * WORLD_W, 0, WORLD_W);
+        cam.z = clamp((0.5 - globe.pitch / Math.PI) * WORLD_H, 0, WORLD_H);
+        const frac = clamp((4.0 - globe.dist) / 2.8, 0, 1);
+        cam.scale = 1.3 + frac * 7.5;
+      } else if (nextMode === "3d") {
+        globe.yaw = (cam.x / WORLD_W - 0.5) * Math.PI * 2;
+        globe.pitch = clamp((0.5 - cam.z / WORLD_H) * Math.PI, -1.3, 1.3);
+        const frac = clamp((cam.scale - 1.3) / 7.5, 0, 1);
+        globe.dist = clamp(3.3 - frac * 1.9, 1.15, 4.0);
+        globe.autoSpin = false;
+      }
+
+      viewMode = nextMode;
+      document.querySelectorAll("[data-view]").forEach(b => {
+        b.classList.toggle("active", b.dataset.view === viewMode);
+      });
+      syncModeControls();
+      updateZoomLabel();
+      draw();
+    }
+
+    function syncModeControls() {
+      const is3D = viewMode === "3d";
+      const is25D = viewMode === "25d";
+      globeCanvas.style.display = is3D ? "block" : "none";
+      document.getElementById("spinBtn").style.display = is3D ? "inline-block" : "none";
+      document.getElementById("spinBtn").classList.toggle("active", globe.autoSpin);
+      document.getElementById("rotLeftBtn").style.display = is25D ? "inline-block" : "none";
+      document.getElementById("rotRightBtn").style.display = is25D ? "inline-block" : "none";
+
+      const hint = document.getElementById("viewHint");
+      if (is3D) hint.textContent = "ЛКМ — крутить Землю • Колесо — зум";
+      else if (is25D) hint.textContent = "ЛКМ — двигать • ПКМ — поворот 2.5D • Колесо — зум";
+      else hint.textContent = "ЛКМ — двигать • Колесо — зум";
     }
 
     function fitWorld() {
       const w = window.innerWidth;
       const h = window.innerHeight;
-      const sx = (w * 0.86) / 768;
-      const sy = (h * 0.82) / 384;
+      if (viewMode === "3d") {
+        globe.anim = null;
+        globe.pitch = 0.36;
+        globe.dist = 2.55;
+        globe.autoSpin = true;
+        syncModeControls();
+        updateZoomLabel();
+        draw();
+        return;
+      }
+      const sx = (w * 0.84) / WORLD_W;
+      const sy = (h * 0.78) / WORLD_H;
       cam.scale = Math.max(1.0, Math.min(sx, sy));
-      cam.x = 384;
-      cam.z = 192;
+      cam.x = WORLD_W / 2;
+      cam.z = WORLD_H / 2;
+      cam.yaw25 = viewMode === "25d" ? -0.45 : 0;
+      cam.tilt25 = 0.62;
       cam.anim = null;
       updateZoomLabel();
       draw();
     }
 
     function updateZoomLabel() {
-      document.getElementById("zoomLabel").textContent = Math.round(cam.scale * 50) + "%";
-    }
-
-    function worldToScreen(gx, gz) {
-      return {
-        x: window.innerWidth / 2 + (gx - cam.x) * cam.scale,
-        y: window.innerHeight / 2 + (gz - cam.z) * cam.scale
-      };
-    }
-
-    function screenToWorld(sx, sy) {
-      return {
-        gx: cam.x + (sx - window.innerWidth / 2) / cam.scale,
-        gz: cam.z + (sy - window.innerHeight / 2) / cam.scale
-      };
+      if (viewMode === "3d") {
+        const pct = Math.round((2.55 / globe.dist) * 100);
+        document.getElementById("zoomLabel").textContent = pct + "%";
+      } else {
+        document.getElementById("zoomLabel").textContent = Math.round(cam.scale * 50) + "%";
+      }
     }
 
     function animateTo(gx, gz, targetScale) {
+      if (viewMode === "3d") {
+        globe.autoSpin = false;
+        syncModeControls();
+        const targetYaw = (gx / WORLD_W - 0.5) * Math.PI * 2;
+        const targetPitch = clamp((0.5 - gz / WORLD_H) * Math.PI, -1.35, 1.35);
+        const startYaw = globe.yaw;
+        const deltaYaw = wrapLonRad(targetYaw - startYaw);
+        globe.anim = {
+          sy: startYaw, dy: deltaYaw,
+          sp: globe.pitch, tp: targetPitch,
+          sd: globe.dist, td: Math.min(globe.dist, 1.62),
+          start: performance.now(), duration: 680
+        };
+        requestAnimationFrame(stepGlobeAnim);
+        return;
+      }
       cam.anim = {
         sx: cam.x, sz: cam.z, ss: cam.scale,
         tx: gx, tz: gz, ts: Math.max(cam.scale, targetScale),
         start: performance.now(), duration: 420
       };
       requestAnimationFrame(stepAnim);
+    }
+
+    function stepGlobeAnim(now) {
+      if (!globe.anim || viewMode !== "3d") return;
+      const t = Math.min(1, (now - globe.anim.start) / globe.anim.duration);
+      const ease = 1 - Math.pow(1 - t, 3);
+      globe.yaw = wrapLonRad(globe.anim.sy + globe.anim.dy * ease);
+      globe.pitch = globe.anim.sp + (globe.anim.tp - globe.anim.sp) * ease;
+      globe.dist = globe.anim.sd + (globe.anim.td - globe.anim.sd) * ease;
+      updateZoomLabel();
+      draw();
+      if (t < 1) {
+        requestAnimationFrame(stepGlobeAnim);
+      } else {
+        globe.anim = null;
+      }
     }
 
     function stepAnim(now) {
@@ -394,9 +966,18 @@
       ownerGrid.fill(-1);
       countryMap.clear();
       capitalMap.clear();
+      countryHeights.clear();
+
+      let maxGdp = 1;
+      for (const c of state.countries) {
+        maxGdp = Math.max(maxGdp, c.hourlyGdp || 0);
+      }
 
       state.countries.forEach((c, idx) => {
         countryMap.set(c.id, c);
+        const normGdp = Math.sqrt(Math.max(0, c.hourlyGdp || 0) / maxGdp);
+        countryHeights.set(c.id, 0.35 + normGdp * 0.65);
+
         let sumX = 0, sumZ = 0, count = 0;
         const cl = c.claims || [];
         for (let i = 0; i + 1 < cl.length; i += 2) {
@@ -418,19 +999,424 @@
           capitalMap.set(c.id, { gx: sumX / count, gz: sumZ / count });
         }
       });
+
+      countryTexDirty = true;
+    }
+
+    function drawBackgroundStars(vw, vh) {
+      ctx.fillStyle = "#050914";
+      ctx.fillRect(0, 0, vw, vh);
+      for (const st of bgStars) {
+        ctx.fillStyle = `rgba(186, 230, 253, ${st.alpha})`;
+        ctx.fillRect(st.rx * vw, st.ry * vh, st.size, st.size);
+      }
     }
 
     function draw() {
       const vw = window.innerWidth;
       const vh = window.innerHeight;
+      if (viewMode === "3d") {
+        drawGlobeView(vw, vh);
+      } else if (viewMode === "25d") {
+        draw25DView(vw, vh);
+      } else {
+        draw2DView(vw, vh);
+      }
+    }
+
+    // ---------------- 3D GLOBE RENDER ----------------
+    function drawGlobeView(vw, vh) {
       ctx.clearRect(0, 0, vw, vh);
-      ctx.fillStyle = "#060b16";
-      ctx.fillRect(0, 0, vw, vh);
+      if (!webglReady || !gl) {
+        draw25DView(vw, vh);
+        return;
+      }
+
+      if (glNeedsTerrainUpload && terrainReady) {
+        glNeedsTerrainUpload = false;
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, glTerrainTex);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, terrainImg);
+      }
+      if (glNeedsBiomeUpload && biomeBytes && biomeBytes.length === WORLD_W * WORLD_H) {
+        glNeedsBiomeUpload = false;
+        gl.activeTexture(gl.TEXTURE1);
+        gl.bindTexture(gl.TEXTURE_2D, glBiomeTex);
+        gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.LUMINANCE, WORLD_W, WORLD_H, 0, gl.LUMINANCE, gl.UNSIGNED_BYTE, biomeBytes);
+      }
+      if (countryTexDirty && ownerGrid) {
+        updateGlobeCountryTexture();
+      }
+
+      gl.useProgram(glProg);
+      gl.uniform2f(glLocs.uRes, globeCanvas.width, globeCanvas.height);
+      const dpr = window.devicePixelRatio || 1;
+      gl.uniform1f(glLocs.uFocal, getGlobeFocal(vw, vh) * dpr);
+      gl.uniform1f(glLocs.uDist, globe.dist);
+      gl.uniform1f(glLocs.uYaw, globe.yaw);
+      gl.uniform1f(glLocs.uPitch, globe.pitch);
+      gl.uniform1f(glLocs.uTime, performance.now() * 0.001);
+      gl.uniform1f(glLocs.uHasTerrain, terrainReady ? 1.0 : 0.0);
+      gl.uniform1f(glLocs.uHasBiomes, (biomeBytes && biomeBytes.length === WORLD_W * WORLD_H) ? 1.0 : 0.0);
+      gl.uniform1f(glLocs.uShowBorders, (layers.borders && ownerGrid) ? 1.0 : 0.0);
+      gl.uniform1i(glLocs.uTerrain, 0);
+      gl.uniform1i(glLocs.uBiomes, 1);
+      gl.uniform1i(glLocs.uCountry, 2);
+      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+
+      if (!state) return;
+
+      const minX = state.world.minChunkX;
+      const minZ = state.world.minChunkZ;
+
+      // Chunk grid overlay when zoomed closely onto globe
+      if (layers.grid && globe.dist < 1.48) {
+        const hit = screenToGlobeGrid(vw * 0.5, vh * 0.5, vw, vh);
+        if (hit) {
+          ctx.strokeStyle = "rgba(255, 255, 255, 0.14)";
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          const span = 18;
+          const x0 = Math.max(0, Math.floor(hit.gx) - span);
+          const x1 = Math.min(WORLD_W, Math.ceil(hit.gx) + span);
+          const z0 = Math.max(0, Math.floor(hit.gz) - span);
+          const z1 = Math.min(WORLD_H, Math.ceil(hit.gz) + span);
+          for (let gx = x0; gx <= x1; gx++) {
+            let started = false;
+            for (let gz = z0; gz <= z1; gz += 2) {
+              const p = projectGlobePoint(gx, gz, 0.001, vw, vh);
+              if (p) {
+                if (!started) { ctx.moveTo(p.x, p.y); started = true; } else ctx.lineTo(p.x, p.y);
+              } else started = false;
+            }
+          }
+          for (let gz = z0; gz <= z1; gz++) {
+            let started = false;
+            for (let gx = x0; gx <= x1; gx += 2) {
+              const p = projectGlobePoint(gx, gz, 0.001, vw, vh);
+              if (p) {
+                if (!started) { ctx.moveTo(p.x, p.y); started = true; } else ctx.lineTo(p.x, p.y);
+              } else started = false;
+            }
+          }
+          ctx.stroke();
+        }
+      }
+
+      // 3D Orbital Diplomacy Arcs over the sphere
+      if (layers.diplomacy) {
+        const drawnPairs = new Set();
+        for (const c of state.countries) {
+          const c1 = capitalMap.get(c.id);
+          if (!c1) continue;
+          const v1 = gridToSphere(c1.gx, c1.gz, 0);
+
+          const drawArc = (targets, color, dashed, width, peakHeight) => {
+            for (const tid of (targets || [])) {
+              const pairKey = [c.id, tid].sort().join("|") + color;
+              if (drawnPairs.has(pairKey)) continue;
+              drawnPairs.add(pairKey);
+              const c2 = capitalMap.get(tid);
+              if (!c2) continue;
+              const v2 = gridToSphere(c2.gx, c2.gz, 0);
+              const dot = clamp(v1.x * v2.x + v1.y * v2.y + v1.z * v2.z, -1, 1);
+              const omega = Math.acos(dot);
+              const sinOmega = Math.sin(omega);
+
+              ctx.save();
+              ctx.strokeStyle = color;
+              ctx.lineWidth = width;
+              if (dashed) ctx.setLineDash([6, 5]);
+              ctx.beginPath();
+              let moved = false;
+              const steps = 28;
+              const arcPeak = Math.max(0.03, Math.min(0.24, omega * peakHeight));
+              for (let s = 0; s <= steps; s++) {
+                const f = s / steps;
+                let px, py, pz;
+                if (sinOmega < 0.001) {
+                  px = v1.x; py = v1.y; pz = v1.z;
+                } else {
+                  const a = Math.sin((1 - f) * omega) / sinOmega;
+                  const b = Math.sin(f * omega) / sinOmega;
+                  px = a * v1.x + b * v2.x;
+                  py = a * v1.y + b * v2.y;
+                  pz = a * v1.z + b * v2.z;
+                }
+                const lift = 1.0 + Math.sin(f * Math.PI) * arcPeak;
+                const pv = worldToGlobeView({ x: px * lift, y: py * lift, z: pz * lift });
+                const horizonZ = lift / globe.dist;
+                if (pv.z <= horizonZ) {
+                  moved = false;
+                  continue;
+                }
+                const depth = globe.dist - pv.z;
+                const focal = getGlobeFocal(vw, vh);
+                const sx = vw * 0.5 + (pv.x / depth) * focal;
+                const sy = vh * 0.5 - (pv.y / depth) * focal;
+                if (!moved) { ctx.moveTo(sx, sy); moved = true; } else ctx.lineTo(sx, sy);
+              }
+              ctx.stroke();
+              ctx.restore();
+            }
+          };
+
+          drawArc(c.tradePartners, "rgba(251, 191, 36, 0.78)", true, 1.6, 0.14);
+          drawArc(c.allies, "rgba(52, 211, 153, 0.85)", false, 2.0, 0.10);
+          drawArc(c.enemies, "rgba(248, 113, 113, 0.92)", true, 2.3, 0.18);
+        }
+      }
+
+      // 3D Capitals & Players on sphere
+      drawCapitalsAndPlayers(vw, vh, minX, minZ, (gx, gz, h) => projectGlobePoint(gx, gz, h * 0.0025, vw, vh));
+    }
+
+    // ---------------- 2.5D EXTRUDED ISOMETRIC RENDER ----------------
+    function draw25DView(vw, vh) {
+      drawBackgroundStars(vw, vh);
 
       const minX = state ? state.world.minChunkX : -384;
       const minZ = state ? state.world.minChunkZ : -192;
-      const gw = state ? state.world.width : 768;
-      const gh = state ? state.world.height : 384;
+      const gw = state ? state.world.width : WORLD_W;
+      const gh = state ? state.world.height : WORLD_H;
+
+      const s = cam.scale;
+      const cosY = Math.cos(cam.yaw25);
+      const sinY = Math.sin(cam.yaw25);
+      const tilt = cam.tilt25;
+
+      // Drop-shadow & 3D planetary slab beneath Earth map
+      const slabCorners = [
+        worldToScreen(0, 0, 0),
+        worldToScreen(gw, 0, 0),
+        worldToScreen(gw, gh, 0),
+        worldToScreen(0, gh, 0)
+      ];
+      const slabDepth = clamp(s * 5.5, 10, 26);
+
+      ctx.save();
+      ctx.fillStyle = "rgba(2, 6, 18, 0.78)";
+      ctx.beginPath();
+      slabCorners.forEach((p, i) => {
+        if (i === 0) ctx.moveTo(p.x + 12, p.y + slabDepth + 14);
+        else ctx.lineTo(p.x + 12, p.y + slabDepth + 14);
+      });
+      ctx.closePath();
+      ctx.fill();
+
+      // Extrude visible bottom sides of the map board itself
+      for (let i = 0; i < 4; i++) {
+        const a = slabCorners[i];
+        const b = slabCorners[(i + 1) % 4];
+        // Draw edge faces facing forward (higher Y edge or lower edges)
+        if ((b.x - a.x) * 1 > 0 || true) {
+          const cross = (slabCorners[(i + 2) % 4].y - a.y) * (b.x - a.x);
+          // Simply draw outer lower edges where midpoint is below center
+          const midY = (a.y + b.y) * 0.5;
+          if (midY > vh * 0.5 - 20 || true) {
+            ctx.fillStyle = i % 2 === 0 ? "#0c1932" : "#091327";
+            ctx.beginPath();
+            ctx.moveTo(a.x, a.y);
+            ctx.lineTo(b.x, b.y);
+            ctx.lineTo(b.x, b.y + slabDepth);
+            ctx.lineTo(a.x, a.y + slabDepth);
+            ctx.closePath();
+            ctx.fill();
+          }
+        }
+      }
+
+      // Affinely transformed terrain.png on top face of the 2.5D slab
+      ctx.beginPath();
+      slabCorners.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)));
+      ctx.closePath();
+      ctx.save();
+      ctx.clip();
+      ctx.setTransform(
+        (window.devicePixelRatio || 1) * (s * cosY),
+        (window.devicePixelRatio || 1) * (s * sinY * tilt),
+        (window.devicePixelRatio || 1) * (-s * sinY),
+        (window.devicePixelRatio || 1) * (s * cosY * tilt),
+        (window.devicePixelRatio || 1) * (vw * 0.5 + (-cam.x * cosY + cam.z * sinY) * s),
+        (window.devicePixelRatio || 1) * (vh * 0.5 + (-cam.x * sinY - cam.z * cosY) * s * tilt)
+      );
+      if (terrainReady) {
+        ctx.imageSmoothingEnabled = s < 2.4;
+        ctx.drawImage(terrainImg, 0, 0, gw, gh);
+      } else {
+        ctx.fillStyle = "#0e2240";
+        ctx.fillRect(0, 0, gw, gh);
+      }
+      ctx.restore();
+
+      // Subtle chunk grid in 2.5D when zoomed in
+      if (layers.grid && s >= 5.5) {
+        ctx.strokeStyle = "rgba(255, 255, 255, 0.08)";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        const centerW = screenToWorld(vw * 0.5, vh * 0.5);
+        const spanX = Math.ceil(vw / Math.max(1, s)) + 8;
+        const spanZ = Math.ceil(vh / Math.max(1, s * tilt)) + 8;
+        const x0 = Math.max(0, Math.floor(centerW.gx - spanX));
+        const x1 = Math.min(gw, Math.ceil(centerW.gx + spanX));
+        const z0 = Math.max(0, Math.floor(centerW.gz - spanZ));
+        const z1 = Math.min(gh, Math.ceil(centerW.gz + spanZ));
+        for (let gx = x0; gx <= x1; gx++) {
+          const pA = worldToScreen(gx, z0, 0);
+          const pB = worldToScreen(gx, z1, 0);
+          ctx.moveTo(pA.x, pA.y); ctx.lineTo(pB.x, pB.y);
+        }
+        for (let gz = z0; gz <= z1; gz++) {
+          const pA = worldToScreen(x0, gz, 0);
+          const pB = worldToScreen(x1, gz, 0);
+          ctx.moveTo(pA.x, pA.y); ctx.lineTo(pB.x, pB.y);
+        }
+        ctx.stroke();
+      }
+      ctx.restore();
+
+      // Glowing border around tilted map slab
+      ctx.strokeStyle = "rgba(56, 189, 248, 0.45)";
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      slabCorners.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)));
+      ctx.closePath();
+      ctx.stroke();
+
+      if (!state) return;
+
+      // 2.5D Extruded Country Blocks (painter's order back-to-front by camera depth)
+      if (layers.borders && ownerGrid) {
+        // Depth vector in grid coords is (sinY, cosY) -> forward means increasing (gx*sinY + gz*cosY)
+        const dirX = sinY >= 0 ? 1 : -1;
+        const dirZ = cosY >= 0 ? 1 : -1;
+        const startX = dirX > 0 ? 0 : gw - 1;
+        const endX = dirX > 0 ? gw : -1;
+        const startZ = dirZ > 0 ? 0 : gh - 1;
+        const endZ = dirZ > 0 ? gh : -1;
+
+        const baseH = clamp(s * 3.4, 5, 19);
+        const palette = state.countries.map(c => {
+          const isFocus = c.id === selectedCountryId || c.id === hoveredCountryId;
+          const mult = (countryHeights.get(c.id) || 0.5) * (isFocus ? 1.45 : 1.0);
+          return {
+            top: hexToRgba(c.color, isFocus ? 0.82 : 0.62),
+            sideX: shadeHex(c.color, isFocus ? 0.72 : 0.56),
+            sideZ: shadeHex(c.color, isFocus ? 0.58 : 0.42),
+            edge: isFocus ? "#ffffff" : c.color,
+            h: baseH * mult,
+            isFocus
+          };
+        });
+
+        // Precompute transformed basis steps for ultra-fast cell quad projection
+        const uxX = s * cosY;
+        const uxY = s * sinY * tilt;
+        const uzX = -s * sinY;
+        const uzY = s * cosY * tilt;
+        const ox = vw * 0.5 + (-cam.x * cosY + cam.z * sinY) * s;
+        const oy = vh * 0.5 + (-cam.x * sinY - cam.z * cosY) * s * tilt;
+
+        for (let gz = startZ; gz !== endZ; gz += dirZ) {
+          for (let gx = startX; gx !== endX; gx += dirX) {
+            const idx = ownerGrid[gz * gw + gx];
+            if (idx < 0) continue;
+
+            const bx = ox + gx * uxX + gz * uzX;
+            const by = oy + gx * uxY + gz * uzY;
+            const margin = Math.max(80, s * 6);
+            if (bx < -margin || bx > vw + margin || by < -margin || by > vh + margin) continue;
+
+            const pal = palette[idx];
+            const h = pal.h;
+
+            const x00 = bx, y00 = by;
+            const x10 = bx + uxX, y10 = by + uxY;
+            const x11 = bx + uxX + uzX, y11 = by + uxY + uzY;
+            const x01 = bx + uzX, y01 = by + uzY;
+
+            // Front-facing X-wall (either +X side if dirX>0 or -X side if dirX<0)
+            const nx = gx + dirX;
+            if (nx < 0 || nx >= gw || ownerGrid[gz * gw + nx] !== idx) {
+              ctx.fillStyle = pal.sideX;
+              ctx.beginPath();
+              if (dirX > 0) {
+                ctx.moveTo(x10, y10); ctx.lineTo(x11, y11);
+                ctx.lineTo(x11, y11 - h); ctx.lineTo(x10, y10 - h);
+              } else {
+                ctx.moveTo(x00, y00); ctx.lineTo(x01, y01);
+                ctx.lineTo(x01, y01 - h); ctx.lineTo(x00, y00 - h);
+              }
+              ctx.closePath();
+              ctx.fill();
+            }
+
+            // Front-facing Z-wall
+            const nz = gz + dirZ;
+            if (nz < 0 || nz >= gh || ownerGrid[nz * gw + gx] !== idx) {
+              ctx.fillStyle = pal.sideZ;
+              ctx.beginPath();
+              if (dirZ > 0) {
+                ctx.moveTo(x01, y01); ctx.lineTo(x11, y11);
+                ctx.lineTo(x11, y11 - h); ctx.lineTo(x01, y01 - h);
+              } else {
+                ctx.moveTo(x00, y00); ctx.lineTo(x10, y10);
+                ctx.lineTo(x10, y10 - h); ctx.lineTo(x00, y00 - h);
+              }
+              ctx.closePath();
+              ctx.fill();
+            }
+
+            // Top roof face
+            ctx.fillStyle = pal.top;
+            ctx.beginPath();
+            ctx.moveTo(x00, y00 - h);
+            ctx.lineTo(x10, y10 - h);
+            ctx.lineTo(x11, y11 - h);
+            ctx.lineTo(x01, y01 - h);
+            ctx.closePath();
+            ctx.fill();
+
+            // Outer boundary highlights on roof edges
+            ctx.strokeStyle = pal.edge;
+            ctx.lineWidth = pal.isFocus ? Math.max(1.8, s * 0.2) : Math.max(1.0, Math.min(2.0, s * 0.14));
+            ctx.beginPath();
+            if (gx === 0 || ownerGrid[gz * gw + gx - 1] !== idx) {
+              ctx.moveTo(x00, y00 - h); ctx.lineTo(x01, y01 - h);
+            }
+            if (gx === gw - 1 || ownerGrid[gz * gw + gx + 1] !== idx) {
+              ctx.moveTo(x10, y10 - h); ctx.lineTo(x11, y11 - h);
+            }
+            if (gz === 0 || ownerGrid[(gz - 1) * gw + gx] !== idx) {
+              ctx.moveTo(x00, y00 - h); ctx.lineTo(x10, y10 - h);
+            }
+            if (gz === gh - 1 || ownerGrid[(gz + 1) * gw + gx] !== idx) {
+              ctx.moveTo(x01, y01 - h); ctx.lineTo(x11, y11 - h);
+            }
+            ctx.stroke();
+          }
+        }
+      }
+
+      // 2.5D Elevated Diplomacy Arcs
+      if (layers.diplomacy) {
+        drawFlatDiplomacyArcs((gx, gz, h) => worldToScreen(gx, gz, h));
+      }
+
+      // 2.5D Elevated Capitals & Players
+      const towerHeight = clamp(s * 3.4, 5, 19);
+      drawCapitalsAndPlayers(vw, vh, minX, minZ, (gx, gz, mult) => worldToScreen(gx, gz, towerHeight * mult + 10));
+    }
+
+    // ---------------- 2D CLASSIC RENDER ----------------
+    function draw2DView(vw, vh) {
+      drawBackgroundStars(vw, vh);
+
+      const minX = state ? state.world.minChunkX : -384;
+      const minZ = state ? state.world.minChunkZ : -192;
+      const gw = state ? state.world.width : WORLD_W;
+      const gh = state ? state.world.height : WORLD_H;
 
       const topLeft = worldToScreen(0, 0);
       const mapW = gw * cam.scale;
@@ -441,12 +1427,10 @@
         ctx.drawImage(terrainImg, topLeft.x, topLeft.y, mapW, mapH);
       }
 
-      // Frame around Earth world
       ctx.strokeStyle = "rgba(56, 189, 248, 0.35)";
       ctx.lineWidth = 1.5;
       ctx.strokeRect(topLeft.x, topLeft.y, mapW, mapH);
 
-      // Optional chunk grid when zoomed in
       if (layers.grid && cam.scale >= 6) {
         ctx.strokeStyle = "rgba(255, 255, 255, 0.08)";
         ctx.lineWidth = 1;
@@ -470,10 +1454,9 @@
 
       if (!state) return;
 
-      // Territory fills and crisp outer borders
       if (layers.borders && ownerGrid) {
         const s = cam.scale;
-        const pad = s > 4 ? 0.35 : 0; // avoids hairline seams when zoomed in
+        const pad = s > 4 ? 0.35 : 0;
         state.countries.forEach((c, idx) => {
           const isFocus = c.id === selectedCountryId || c.id === hoveredCountryId;
           ctx.fillStyle = hexToRgba(c.color, isFocus ? 0.68 : 0.45);
@@ -488,7 +1471,6 @@
             ctx.fillRect(sx, sy, s + pad, s + pad);
           }
 
-          // Perimeter edges only
           ctx.strokeStyle = isFocus ? "#ffffff" : c.color;
           ctx.lineWidth = isFocus ? Math.max(2.0, Math.min(3.5, s * 0.22)) : Math.max(1.2, Math.min(2.4, s * 0.16));
           ctx.beginPath();
@@ -516,72 +1498,98 @@
         });
       }
 
-      // Diplomacy arcs (allies, trade, enemies)
       if (layers.diplomacy) {
-        const drawnPairs = new Set();
-        for (const c of state.countries) {
-          const p1 = capitalMap.get(c.id);
-          if (!p1) continue;
-          const s1 = worldToScreen(p1.gx, p1.gz);
-
-          const drawRel = (targets, color, dashed, width, bend) => {
-            for (const tid of (targets || [])) {
-              const pairKey = [c.id, tid].sort().join("|") + color;
-              if (drawnPairs.has(pairKey)) continue;
-              drawnPairs.add(pairKey);
-              const p2 = capitalMap.get(tid);
-              if (!p2) continue;
-              const s2 = worldToScreen(p2.gx, p2.gz);
-              const mx = (s1.x + s2.x) / 2;
-              const my = (s1.y + s2.y) / 2 - Math.hypot(s2.x - s1.x, s2.y - s1.y) * bend;
-              ctx.save();
-              ctx.strokeStyle = color;
-              ctx.lineWidth = width;
-              if (dashed) ctx.setLineDash([6, 5]);
-              ctx.beginPath();
-              ctx.moveTo(s1.x, s1.y);
-              ctx.quadraticCurveTo(mx, my, s2.x, s2.y);
-              ctx.stroke();
-              ctx.restore();
-            }
-          };
-
-          drawRel(c.tradePartners, "rgba(251, 191, 36, 0.72)", true, 1.5, 0.14);
-          drawRel(c.allies, "rgba(52, 211, 153, 0.82)", false, 2.0, 0.08);
-          drawRel(c.enemies, "rgba(248, 113, 113, 0.9)", true, 2.2, 0.18);
-        }
+        drawFlatDiplomacyArcs((gx, gz) => worldToScreen(gx, gz, 0));
       }
 
-      // Capitals & names
+      drawCapitalsAndPlayers(vw, vh, minX, minZ, (gx, gz) => worldToScreen(gx, gz, 0));
+    }
+
+    function drawFlatDiplomacyArcs(projector) {
+      const drawnPairs = new Set();
+      for (const c of state.countries) {
+        const p1 = capitalMap.get(c.id);
+        if (!p1) continue;
+        const h1 = (countryHeights.get(c.id) || 0.5) * 14;
+        const s1 = projector(p1.gx, p1.gz, viewMode === "25d" ? h1 : 0);
+        if (!s1) continue;
+
+        const drawRel = (targets, color, dashed, width, bend) => {
+          for (const tid of (targets || [])) {
+            const pairKey = [c.id, tid].sort().join("|") + color;
+            if (drawnPairs.has(pairKey)) continue;
+            drawnPairs.add(pairKey);
+            const p2 = capitalMap.get(tid);
+            if (!p2) continue;
+            const h2 = (countryHeights.get(tid) || 0.5) * 14;
+            const s2 = projector(p2.gx, p2.gz, viewMode === "25d" ? h2 : 0);
+            if (!s2) continue;
+            const distPx = Math.hypot(s2.x - s1.x, s2.y - s1.y);
+            const mx = (s1.x + s2.x) / 2;
+            const my = (s1.y + s2.y) / 2 - distPx * bend - (viewMode === "25d" ? 18 : 0);
+            ctx.save();
+            ctx.strokeStyle = color;
+            ctx.lineWidth = width;
+            if (dashed) ctx.setLineDash([6, 5]);
+            ctx.beginPath();
+            ctx.moveTo(s1.x, s1.y);
+            ctx.quadraticCurveTo(mx, my, s2.x, s2.y);
+            ctx.stroke();
+            ctx.restore();
+          }
+        };
+
+        drawRel(c.tradePartners, "rgba(251, 191, 36, 0.75)", true, 1.5, 0.14);
+        drawRel(c.allies, "rgba(52, 211, 153, 0.85)", false, 2.0, 0.08);
+        drawRel(c.enemies, "rgba(248, 113, 113, 0.9)", true, 2.2, 0.18);
+      }
+    }
+
+    function drawCapitalsAndPlayers(vw, vh, minX, minZ, projector) {
       if (layers.capitals) {
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
         for (const c of state.countries) {
           const cap = capitalMap.get(c.id);
           if (!cap) continue;
-          const pt = worldToScreen(cap.gx, cap.gz);
-          if (pt.x < -80 || pt.y < -40 || pt.x > vw + 80 || pt.y > vh + 40) continue;
+          const mult = countryHeights.get(c.id) || 0.6;
+          const base = worldToScreen(cap.gx, cap.gz, 0);
+          const pt = projector(cap.gx, cap.gz, mult);
+          if (!pt || pt.x < -80 || pt.y < -40 || pt.x > vw + 80 || pt.y > vh + 40) continue;
 
           const selected = c.id === selectedCountryId;
+          // Beacon stem in 2.5D / 3D
+          if (base && (viewMode !== "2d") && Math.hypot(pt.x - base.x, pt.y - base.y) > 2) {
+            ctx.strokeStyle = hexToRgba(c.color, selected ? 0.95 : 0.65);
+            ctx.lineWidth = selected ? 2.0 : 1.3;
+            ctx.beginPath();
+            ctx.moveTo(base.x, base.y);
+            ctx.lineTo(pt.x, pt.y);
+            ctx.stroke();
+          }
+
           ctx.fillStyle = selected ? "#ffffff" : c.color;
           ctx.beginPath();
-          ctx.arc(pt.x, pt.y, selected ? 5.5 : 4.2, 0, Math.PI * 2);
+          ctx.arc(pt.x, pt.y, selected ? 5.6 : 4.2, 0, Math.PI * 2);
           ctx.fill();
           ctx.strokeStyle = "#080d18";
           ctx.lineWidth = 1.6;
           ctx.stroke();
 
-          if (cam.scale >= 1.5 || selected || (c.claims && c.claims.length >= 4)) {
+          const showName = viewMode === "3d"
+            ? (globe.dist < 2.75 || selected || (c.claims && c.claims.length >= 4))
+            : (cam.scale >= 1.5 || selected || (c.claims && c.claims.length >= 4));
+          if (showName) {
             const label = (c.spawn ? "★ " : "") + c.name;
             ctx.font = selected ? "700 12px sans-serif" : "600 11px sans-serif";
             const tw = ctx.measureText(label).width;
             const bx = pt.x - tw / 2 - 6;
-            const by = pt.y - 22;
-            ctx.fillStyle = selected ? "rgba(14, 116, 144, 0.92)" : "rgba(8, 13, 24, 0.8)";
+            const by = pt.y - 23;
+            ctx.fillStyle = selected ? "rgba(14, 116, 144, 0.92)" : "rgba(8, 13, 24, 0.84)";
             ctx.beginPath();
             ctx.roundRect(bx, by, tw + 12, 16, 5);
             ctx.fill();
-            ctx.strokeStyle = selected ? "#38bdf8" : hexToRgba(c.color, 0.75);
+            ctx.strokeStyle = selected ? "#38bdf8" : hexToRgba(c.color, 0.78);
             ctx.lineWidth = 1;
             ctx.stroke();
             ctx.fillStyle = "#f8fafc";
@@ -590,15 +1598,14 @@
         }
       }
 
-      // Online players
       if (layers.players && state.players) {
         for (const p of state.players) {
           const gx = (p.x / 16) - minX;
           const gz = (p.z / 16) - minZ;
-          const pt = worldToScreen(gx, gz);
-          if (pt.x < -40 || pt.y < -40 || pt.x > vw + 40 || pt.y > vh + 40) continue;
+          const pt = projector(gx, gz, 0.9);
+          if (!pt || pt.x < -40 || pt.y < -40 || pt.x > vw + 40 || pt.y > vh + 40) continue;
 
-          ctx.fillStyle = "rgba(56, 189, 248, 0.25)";
+          ctx.fillStyle = "rgba(56, 189, 248, 0.28)";
           ctx.beginPath();
           ctx.arc(pt.x, pt.y, 9, 0, Math.PI * 2);
           ctx.fill();
@@ -619,6 +1626,7 @@
       }
     }
 
+    // ---------------- SIDEBAR & DOSSIER ----------------
     function renderSidebar() {
       const container = document.getElementById("sidebarContent");
       const controls = document.getElementById("countryControls");
@@ -779,6 +1787,7 @@
 
     window.focusCountry = function(id) {
       selectedCountryId = id;
+      countryTexDirty = true;
       const cap = capitalMap.get(id);
       if (cap) {
         animateTo(cap.gx, cap.gz, Math.max(cam.scale, 6.5));
@@ -797,11 +1806,13 @@
 
     window.closeDossier = function() {
       selectedCountryId = null;
+      countryTexDirty = true;
       renderSidebar();
       renderDossier();
       draw();
     };
 
+    // ---------------- STATE POLLING ----------------
     function schedulePoll(ms) {
       clearTimeout(pollTimer);
       if (!paused) {
@@ -895,35 +1906,65 @@
         applyState(await res.json());
         const nextMs = Math.max(1000, state.refreshMs || 2000);
         schedulePoll(nextMs);
-      } catch (e) {
+      } catch (_) {
         schedulePoll(gistId ? 20000 : 3000);
       }
     }
 
-    // Mouse / Pan / Zoom interactions
-    let dragging = false;
+    // ---------------- INTERACTION ----------------
+    let dragMode = null; // "pan" | "orbit25"
     let dragMoved = 0;
     let lastX = 0, lastY = 0;
 
+    canvas.addEventListener("contextmenu", e => {
+      if (viewMode === "25d") e.preventDefault();
+    });
+
     canvas.addEventListener("mousedown", e => {
-      if (e.button !== 0) return;
-      dragging = true;
+      if (e.button === 0) {
+        dragMode = "pan";
+      } else if (e.button === 2 && viewMode === "25d") {
+        dragMode = "orbit25";
+      } else {
+        return;
+      }
       dragMoved = 0;
       lastX = e.clientX;
       lastY = e.clientY;
       cam.anim = null;
+      globe.anim = null;
+      if (viewMode === "3d" && globe.autoSpin) {
+        globe.autoSpin = false;
+        syncModeControls();
+      }
       canvas.classList.add("dragging");
     });
 
     window.addEventListener("mousemove", e => {
-      if (dragging) {
+      if (dragMode) {
         const dx = e.clientX - lastX;
         const dy = e.clientY - lastY;
         dragMoved += Math.abs(dx) + Math.abs(dy);
-        cam.x -= dx / cam.scale;
-        cam.z -= dy / cam.scale;
         lastX = e.clientX;
         lastY = e.clientY;
+
+        if (viewMode === "3d") {
+          const sens = (0.0046 * (globe.dist - 0.92));
+          globe.yaw = wrapLonRad(globe.yaw - dx * sens);
+          globe.pitch = clamp(globe.pitch + dy * sens, -1.42, 1.42);
+        } else if (dragMode === "orbit25" && viewMode === "25d") {
+          cam.yaw25 += dx * 0.0065;
+          cam.tilt25 = clamp(cam.tilt25 - dy * 0.0035, 0.34, 0.96);
+        } else if (viewMode === "25d") {
+          const c = Math.cos(cam.yaw25), s = Math.sin(cam.yaw25);
+          const rx = -dx;
+          const rz = -dy / cam.tilt25;
+          cam.x += (rx * c + rz * s) / cam.scale;
+          cam.z += (-rx * s + rz * c) / cam.scale;
+        } else {
+          cam.x -= dx / cam.scale;
+          cam.z -= dy / cam.scale;
+        }
         draw();
         return;
       }
@@ -943,8 +1984,7 @@
         const bz = cz * 16 + 8;
         let biome = "";
         if (biomeBytes && biomeBytes.length === gw * gh) {
-          const code = biomeBytes[gz * gw + gx];
-          biome = TERRAIN_NAMES[code] || "";
+          biome = TERRAIN_NAMES[biomeBytes[gz * gw + gx]] || "";
         }
         document.getElementById("hoverCoords").textContent =
           `X:${bx}, Z:${bz} (чанк ${cx}, ${cz})${biome ? " • " + biome : ""}`;
@@ -959,25 +1999,33 @@
           document.getElementById("hoverOwner").textContent = "Ничья земля";
         }
       } else {
-        document.getElementById("hoverCoords").textContent = "За границей карты";
+        document.getElementById("hoverCoords").textContent = viewMode === "3d" ? "Космос" : "За границей карты";
         document.getElementById("hoverOwner").textContent = "";
       }
 
       if (nextHover !== hoveredCountryId) {
         hoveredCountryId = nextHover;
+        countryTexDirty = true;
         draw();
       }
     });
 
     function findCountryAtScreen(sx, sy) {
       if (!state) return null;
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
       if (layers.capitals) {
         let bestId = null;
-        let bestDist = 14;
+        let bestDist = 15;
         for (const c of state.countries) {
           const cap = capitalMap.get(c.id);
           if (!cap) continue;
-          const pt = worldToScreen(cap.gx, cap.gz);
+          const mult = countryHeights.get(c.id) || 0.6;
+          const towerH = viewMode === "25d" ? clamp(cam.scale * 3.4, 5, 19) * mult + 10 : mult * 0.0025;
+          const pt = viewMode === "3d"
+            ? projectGlobePoint(cap.gx, cap.gz, towerH, vw, vh)
+            : worldToScreen(cap.gx, cap.gz, viewMode === "25d" ? towerH : 0);
+          if (!pt) continue;
           const d = Math.hypot(pt.x - sx, pt.y - sy);
           if (d <= bestDist) {
             bestDist = d;
@@ -1003,11 +2051,13 @@
     }
 
     window.addEventListener("mouseup", e => {
-      if (!dragging) return;
-      dragging = false;
+      if (!dragMode) return;
+      const wasPan = dragMode === "pan";
+      dragMode = null;
       canvas.classList.remove("dragging");
-      if (dragMoved <= 5 && state) {
+      if (wasPan && dragMoved <= 5 && state) {
         selectedCountryId = findCountryAtScreen(e.clientX, e.clientY);
+        countryTexDirty = true;
         renderSidebar();
         renderDossier();
         draw();
@@ -1016,31 +2066,48 @@
 
     canvas.addEventListener("touchstart", e => {
       if (e.touches.length === 1) {
-        dragging = true;
+        dragMode = "pan";
         dragMoved = 0;
         lastX = e.touches[0].clientX;
         lastY = e.touches[0].clientY;
         cam.anim = null;
+        globe.anim = null;
+        if (viewMode === "3d" && globe.autoSpin) {
+          globe.autoSpin = false;
+          syncModeControls();
+        }
       }
     }, { passive: true });
 
     canvas.addEventListener("touchmove", e => {
-      if (!dragging || e.touches.length !== 1) return;
+      if (!dragMode || e.touches.length !== 1) return;
       const dx = e.touches[0].clientX - lastX;
       const dy = e.touches[0].clientY - lastY;
       dragMoved += Math.abs(dx) + Math.abs(dy);
-      cam.x -= dx / cam.scale;
-      cam.z -= dy / cam.scale;
       lastX = e.touches[0].clientX;
       lastY = e.touches[0].clientY;
+      if (viewMode === "3d") {
+        const sens = 0.005 * (globe.dist - 0.9);
+        globe.yaw = wrapLonRad(globe.yaw - dx * sens);
+        globe.pitch = clamp(globe.pitch + dy * sens, -1.42, 1.42);
+      } else if (viewMode === "25d") {
+        const c = Math.cos(cam.yaw25), s = Math.sin(cam.yaw25);
+        const rx = -dx, rz = -dy / cam.tilt25;
+        cam.x += (rx * c + rz * s) / cam.scale;
+        cam.z += (-rx * s + rz * c) / cam.scale;
+      } else {
+        cam.x -= dx / cam.scale;
+        cam.z -= dy / cam.scale;
+      }
       draw();
     }, { passive: true });
 
     canvas.addEventListener("touchend", e => {
-      if (!dragging) return;
-      dragging = false;
+      if (!dragMode) return;
+      dragMode = null;
       if (dragMoved <= 8 && state && e.changedTouches.length > 0) {
         selectedCountryId = findCountryAtScreen(e.changedTouches[0].clientX, e.changedTouches[0].clientY);
+        countryTexDirty = true;
         renderSidebar();
         renderDossier();
         draw();
@@ -1050,6 +2117,14 @@
     canvas.addEventListener("wheel", e => {
       e.preventDefault();
       cam.anim = null;
+      globe.anim = null;
+      if (viewMode === "3d") {
+        const factor = e.deltaY < 0 ? 0.88 : 1.13;
+        globe.dist = clamp(1.0 + (globe.dist - 1.0) * factor, 1.12, 4.2);
+        updateZoomLabel();
+        draw();
+        return;
+      }
       const factor = e.deltaY < 0 ? 1.18 : 1 / 1.18;
       const before = screenToWorld(e.clientX, e.clientY);
       cam.scale = Math.max(0.7, Math.min(48, cam.scale * factor));
@@ -1060,7 +2135,11 @@
       draw();
     }, { passive: false });
 
-    // Toolbar actions
+    // ---------------- TOOLBAR CONTROLS ----------------
+    document.querySelectorAll("[data-view]").forEach(btn => {
+      btn.addEventListener("click", () => setViewMode(btn.dataset.view));
+    });
+
     document.querySelectorAll("[data-layer]").forEach(btn => {
       btn.addEventListener("click", () => {
         const key = btn.dataset.layer;
@@ -1085,19 +2164,37 @@
       document.getElementById("sidebar").classList.toggle("collapsed");
     });
     document.getElementById("resetViewBtn").addEventListener("click", fitWorld);
+    document.getElementById("spinBtn").addEventListener("click", () => {
+      globe.autoSpin = !globe.autoSpin;
+      syncModeControls();
+    });
+    document.getElementById("rotLeftBtn").addEventListener("click", () => {
+      cam.yaw25 -= 0.25;
+      draw();
+    });
+    document.getElementById("rotRightBtn").addEventListener("click", () => {
+      cam.yaw25 += 0.25;
+      draw();
+    });
     document.getElementById("zoomInBtn").addEventListener("click", () => {
-      cam.scale = Math.min(48, cam.scale * 1.3);
+      if (viewMode === "3d") {
+        globe.dist = clamp(1.0 + (globe.dist - 1.0) * 0.78, 1.12, 4.2);
+      } else {
+        cam.scale = Math.min(48, cam.scale * 1.3);
+      }
       updateZoomLabel();
       draw();
     });
     document.getElementById("zoomOutBtn").addEventListener("click", () => {
-      cam.scale = Math.max(0.7, cam.scale / 1.3);
+      if (viewMode === "3d") {
+        globe.dist = clamp(1.0 + (globe.dist - 1.0) * 1.28, 1.12, 4.2);
+      } else {
+        cam.scale = Math.max(0.7, cam.scale / 1.3);
+      }
       updateZoomLabel();
       draw();
     });
-    document.getElementById("refreshNowBtn").addEventListener("click", () => {
-      fetchState(true);
-    });
+    document.getElementById("refreshNowBtn").addEventListener("click", () => fetchState(true));
     document.getElementById("gistSaveBtn").addEventListener("click", () => {
       const val = (document.getElementById("gistIdInput").value || "").trim();
       if (!val) return;
@@ -1120,9 +2217,36 @@
       if (!paused) fetchState(true);
     });
 
-    // Startup
+    // Gentle auto-spin & twinkling stars loop in 3D Globe mode
+    let lastFrameMs = performance.now();
+    function tick3DLoop(now) {
+      const dt = Math.min(0.1, (now - lastFrameMs) * 0.001);
+      lastFrameMs = now;
+      if (viewMode === "3d" && webglReady && !dragMode && !globe.anim) {
+        if (globe.autoSpin) {
+          globe.yaw = wrapLonRad(globe.yaw + dt * 0.09);
+        }
+        draw();
+      }
+      globeAnimLoopId = requestAnimationFrame(tick3DLoop);
+    }
+
+    // ---------------- STARTUP ----------------
+    initWebGL();
+    if (!webglReady) {
+      viewMode = "25d";
+      document.querySelectorAll("[data-view]").forEach(b => {
+        if (b.dataset.view === "3d") b.style.display = "none";
+        b.classList.toggle("active", b.dataset.view === viewMode);
+      });
+    }
     window.addEventListener("resize", resizeCanvas);
-    terrainImg.onload = () => { terrainReady = true; draw(); };
+
+    terrainImg.onload = () => {
+      terrainReady = true;
+      glNeedsTerrainUpload = true;
+      draw();
+    };
     terrainImg.onerror = () => {
       if (!terrainImg.dataset.fallbackTried) {
         terrainImg.dataset.fallbackTried = "1";
@@ -1130,15 +2254,22 @@
       }
     };
     terrainImg.src = isGistMode ? "./terrain.png" : "/api/terrain.png";
+
     fetch(isGistMode ? "./biomes.bin" : "/api/biomes")
       .then(r => r.ok ? r.arrayBuffer() : fetch("./biomes.bin").then(r2 => r2.ok ? r2.arrayBuffer() : null))
       .then(buf => {
-        if (buf) biomeBytes = new Uint8Array(buf);
+        if (buf) {
+          biomeBytes = new Uint8Array(buf);
+          glNeedsBiomeUpload = true;
+          draw();
+        }
       }).catch(() => {});
 
     resizeCanvas();
+    syncModeControls();
     fitWorld();
     fetchState();
+    requestAnimationFrame(tick3DLoop);
   </script>
 </body>
 </html>
