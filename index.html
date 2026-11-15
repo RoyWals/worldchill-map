@@ -347,8 +347,8 @@
     const synthColorCanvas = document.createElement("canvas");
     const synthHeightCanvas = document.createElement("canvas");
     const countryOverlayCanvas = document.createElement("canvas");
-    countryOverlayCanvas.width = WORLD_W;
-    countryOverlayCanvas.height = WORLD_H;
+    countryOverlayCanvas.width = WORLD_W * 2;
+    countryOverlayCanvas.height = WORLD_H * 2;
     const countryOverlayCtx = countryOverlayCanvas.getContext("2d");
     let synthColorCtx = null;
     let synthHeightCtx = null;
@@ -799,17 +799,17 @@
       gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(sIdx), gl.STATIC_DRAW);
       meshGlobe3 = { pBuf, uBuf, iBuf: iBuf3, count: sIdx.length };
 
-      texColor = createDynamicTexture();
-      texHeight = createDynamicTexture();
-      texCountry = createDynamicTexture();
+      texColor = createDynamicTexture(gl.LINEAR);
+      texHeight = createDynamicTexture(gl.LINEAR);
+      texCountry = createDynamicTexture(gl.NEAREST);
       glReady = true;
     }
 
-    function createDynamicTexture() {
+    function createDynamicTexture(filter = gl.LINEAR) {
       const t = gl.createTexture();
       gl.bindTexture(gl.TEXTURE_2D, t);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
       const empty = new Uint8Array([14, 24, 48, 255]);
@@ -1035,12 +1035,14 @@
     }
 
     function rebuildCountryOverlayTexture() {
-      countryOverlayCtx.clearRect(0, 0, WORLD_W, WORLD_H);
+      const cw = WORLD_W * 2;
+      const ch = WORLD_H * 2;
+      countryOverlayCtx.clearRect(0, 0, cw, ch);
       if (!layers.territories && !layers.borders) {
         uploadTexture(texCountry, countryOverlayCanvas);
         return;
       }
-      const img = countryOverlayCtx.createImageData(WORLD_W, WORLD_H);
+      const img = countryOverlayCtx.createImageData(cw, ch);
       const data = img.data;
 
       for (const [k, owner] of chunkOwnerMap.entries()) {
@@ -1054,24 +1056,28 @@
         const sSame = chunkOwnerMap.get(cx + "," + (cz + 1))?.id === owner.id;
         const wSame = chunkOwnerMap.get((cx - 1) + "," + cz)?.id === owner.id;
         const eSame = chunkOwnerMap.get((cx + 1) + "," + cz)?.id === owner.id;
-        const isEdge = !(nSame && sSame && wSame && eSame);
 
-        const hex = owner.color.replace("#", "");
+        const hex = (owner.color || "#38bdf8").replace("#", "");
         const cr = parseInt(hex.slice(0, 2), 16) || 120;
         const cg = parseInt(hex.slice(2, 4), 16) || 180;
         const cb = parseInt(hex.slice(4, 6), 16) || 255;
 
-        const p = (gz * WORLD_W + gx) * 4;
-        if (isEdge && layers.borders) {
-          data[p] = Math.min(255, cr + (isSel ? 55 : 25));
-          data[p + 1] = Math.min(255, cg + (isSel ? 55 : 25));
-          data[p + 2] = Math.min(255, cb + (isSel ? 55 : 25));
-          data[p + 3] = 245; // >= 0.85 triggers crisp border path in shader
-        } else if (layers.territories) {
-          data[p] = cr;
-          data[p + 1] = cg;
-          data[p + 2] = cb;
-          data[p + 3] = isSel ? 175 : 140;
+        for (let sy = 0; sy < 2; sy++) {
+          for (let sx = 0; sx < 2; sx++) {
+            const onEdge = (sy === 0 && !nSame) || (sy === 1 && !sSame) || (sx === 0 && !wSame) || (sx === 1 && !eSame);
+            const p = ((gz * 2 + sy) * cw + (gx * 2 + sx)) * 4;
+            if (onEdge && layers.borders) {
+              data[p] = Math.min(255, cr + (isSel ? 65 : 35));
+              data[p + 1] = Math.min(255, cg + (isSel ? 65 : 35));
+              data[p + 2] = Math.min(255, cb + (isSel ? 65 : 35));
+              data[p + 3] = 245;
+            } else if (layers.territories) {
+              data[p] = cr;
+              data[p + 1] = cg;
+              data[p + 2] = cb;
+              data[p + 3] = isSel ? 170 : 120;
+            }
+          }
         }
       }
       countryOverlayCtx.putImageData(img, 0, 0);
@@ -1276,16 +1282,34 @@
       }
     }
 
+    function forEachCountryClaim(c, fn) {
+      const arr = c?.claims;
+      if (!Array.isArray(arr) || arr.length === 0) return;
+      if (typeof arr[0] === "number") {
+        for (let i = 0; i + 1 < arr.length; i += 2) {
+          fn(arr[i], arr[i + 1]);
+        }
+      } else {
+        for (const pair of arr) {
+          if (Array.isArray(pair) && pair.length >= 2) fn(pair[0], pair[1]);
+        }
+      }
+    }
+
+    function getCountryClaimCount(c) {
+      const arr = c?.claims;
+      if (!Array.isArray(arr) || arr.length === 0) return 0;
+      return typeof arr[0] === "number" ? (arr.length >> 1) : arr.length;
+    }
+
     function rebuildIndex() {
       chunkOwnerMap.clear();
       countryById.clear();
       for (const c of state.countries || []) {
         countryById.set(c.id, c);
-        if (Array.isArray(c.claims)) {
-          for (const pair of c.claims) {
-            chunkOwnerMap.set(pair[0] + "," + pair[1], c);
-          }
-        }
+        forEachCountryClaim(c, (cx, cz) => {
+          chunkOwnerMap.set(cx + "," + cz, c);
+        });
       }
       if (selectedCountryId && !countryById.has(selectedCountryId)) {
         selectedCountryId = null;
@@ -1295,7 +1319,7 @@
     function updateLivePill() {
       const nCountries = (state.countries || []).length;
       const nPlayers = (state.players || []).length;
-      const totalClaims = (state.countries || []).reduce((acc, c) => acc + (c.claims ? c.claims.length : 0), 0);
+      const totalClaims = (state.countries || []).reduce((acc, c) => acc + getCountryClaimCount(c), 0);
       document.getElementById("liveStats").textContent =
         `Стран: ${nCountries} · Чанков: ${totalClaims} · Онлайн: ${nPlayers}`;
     }
@@ -1541,10 +1565,11 @@
     // ---------------- Overlay & 2D Drawing ----------------
     function getCountryCenter(c) {
       if (c.spawn) return { cx: c.spawn.cx, cz: c.spawn.cz };
-      if (!c.claims || c.claims.length === 0) return null;
+      const count = getCountryClaimCount(c);
+      if (count === 0) return null;
       let sx = 0, sz = 0;
-      for (const p of c.claims) { sx += p[0]; sz += p[1]; }
-      return { cx: sx / c.claims.length, cz: sz / c.claims.length };
+      forEachCountryClaim(c, (cx, cz) => { sx += cx; sz += cz; });
+      return { cx: sx / count, cz: sz / count };
     }
 
     function drawOverlayAnd2D(cssW, cssH, nowSec, viewInfo) {
@@ -1598,13 +1623,35 @@
         }
       }
 
-      // Territories & borders
-      if (layers.territories || layers.borders) {
+      // Territories & crisp vector borders in 2D
+      if (layers.territories) {
         ovCtx.save();
         ovCtx.imageSmoothingEnabled = false;
-        if (!layers.territories) ovCtx.globalAlpha = 0.85;
+        ovCtx.globalAlpha = 0.72;
         ovCtx.drawImage(countryOverlayCanvas, worldLeft, worldTop, worldPxW, worldPxH);
         ovCtx.restore();
+      }
+      if (layers.borders) {
+        for (const c of state.countries || []) {
+          const isSel = c.id === selectedCountryId;
+          ovCtx.save();
+          ovCtx.strokeStyle = c.color || "#38bdf8";
+          ovCtx.lineWidth = isSel ? Math.max(2.5, cam2d.zoom * 0.42) : Math.max(1.8, cam2d.zoom * 0.3);
+          ovCtx.shadowColor = "rgba(0,0,0,0.75)";
+          ovCtx.shadowBlur = 3;
+          ovCtx.beginPath();
+          forEachCountryClaim(c, (cx, cz) => {
+            const x0 = ox + cx * cam2d.zoom;
+            const y0 = oz + cz * cam2d.zoom;
+            const s = cam2d.zoom;
+            if (chunkOwnerMap.get(cx + "," + (cz - 1))?.id !== c.id) { ovCtx.moveTo(x0, y0); ovCtx.lineTo(x0 + s, y0); }
+            if (chunkOwnerMap.get(cx + "," + (cz + 1))?.id !== c.id) { ovCtx.moveTo(x0, y0 + s); ovCtx.lineTo(x0 + s, y0 + s); }
+            if (chunkOwnerMap.get((cx - 1) + "," + cz)?.id !== c.id) { ovCtx.moveTo(x0, y0); ovCtx.lineTo(x0, y0 + s); }
+            if (chunkOwnerMap.get((cx + 1) + "," + cz)?.id !== c.id) { ovCtx.moveTo(x0 + s, y0); ovCtx.lineTo(x0 + s, y0 + s); }
+          });
+          ovCtx.stroke();
+          ovCtx.restore();
+        }
       }
 
       // Grid
@@ -1649,8 +1696,10 @@
       // Players
       if (layers.players && state.showPlayers) {
         for (const p of state.players || []) {
-          const sx = ox + (p.bx / 16) * cam2d.zoom;
-          const sz = oz + (p.bz / 16) * cam2d.zoom;
+          const px = p.x ?? p.bx ?? (p.cx * 16 + 8);
+          const pz = p.z ?? p.bz ?? (p.cz * 16 + 8);
+          const sx = ox + (px / 16) * cam2d.zoom;
+          const sz = oz + (pz / 16) * cam2d.zoom;
           drawPlayerPin(sx, sz, p);
         }
       }
@@ -1762,7 +1811,9 @@
       // Online players
       if (layers.players && state.showPlayers) {
         for (const p of state.players || []) {
-          const pt = projFn(p.bx / 16, p.bz / 16, 7.0 * reliefMult);
+          const px = p.x ?? p.bx ?? (p.cx * 16 + 8);
+          const pz = p.z ?? p.bz ?? (p.cz * 16 + 8);
+          const pt = projFn(px / 16, pz / 16, 7.0 * reliefMult);
           if (pt) drawPlayerPin(pt.x, pt.y, p);
         }
       }
@@ -2010,7 +2061,7 @@
         let list = [...(state.countries || [])];
         if (q) list = list.filter(c => c.name.toLowerCase().includes(q) || c.owner.toLowerCase().includes(q));
         list.sort((a, b) => {
-          if (sortBy === "claims") return (b.claims?.length || 0) - (a.claims?.length || 0);
+          if (sortBy === "claims") return getCountryClaimCount(b) - getCountryClaimCount(a);
           if (sortBy === "rating") return (b.rating || 0) - (a.rating || 0);
           if (sortBy === "treasury") return (b.treasury || 0) - (a.treasury || 0);
           return (b.hourlyGdp || 0) - (a.hourlyGdp || 0);
@@ -2026,7 +2077,7 @@
               <div class="row-title">${c.wonders?.length ? "👑 " : ""}${esc(c.name)}</div>
               <div class="row-sub">
                 <span>${c.online ? "🟢 Онлайн" : "⚫ Оффлайн"}</span>
-                <span>⚑ ${c.claims?.length || 0} ч.</span>
+                <span>⚑ ${getCountryClaimCount(c)} ч.</span>
                 <span>★ ${Number(c.rating || 0).toFixed(1)}</span>
               </div>
             </div>
@@ -2045,18 +2096,23 @@
           box.innerHTML = `<div style="padding:16px;color:var(--muted);font-size:12px;">Сейчас нет игроков онлайн.</div>`;
           return;
         }
-        box.innerHTML = list.map(p => `
+        box.innerHTML = list.map(p => {
+          const px = p.x ?? p.bx ?? 0;
+          const pz = p.z ?? p.bz ?? 0;
+          const pColor = p.color || p.countryColor || "#38bdf8";
+          return `
           <div class="country-row" data-px="${p.cx}" data-pz="${p.cz}">
-            <div class="swatch" style="background:${esc(p.countryColor || "#38bdf8")}"></div>
+            <div class="swatch" style="background:${esc(pColor)}"></div>
             <div class="row-main">
               <div class="row-title">${esc(p.name)}</div>
               <div class="row-sub">
                 <span>${p.countryName ? esc(p.countryName) : "Без страны"}</span>
-                <span>X:${p.bx} Z:${p.bz}</span>
+                <span>X:${px} Z:${pz}</span>
               </div>
             </div>
           </div>
-        `).join("");
+        `;
+        }).join("");
         box.querySelectorAll(".country-row").forEach(el => {
           el.addEventListener("click", () => focusWorldChunk(Number(el.dataset.px), Number(el.dataset.pz)));
         });
@@ -2070,7 +2126,7 @@
           <div class="chronicle-item">
             <div class="chronicle-meta">
               <span class="badge">${esc(ev.category || "Событие")}</span>
-              <span>${new Date(ev.timestampMs || Date.now()).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}</span>
+              <span>${new Date(ev.timeMs || ev.timestampMs || Date.now()).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}</span>
             </div>
             <div>${esc(ev.text || "")}</div>
           </div>
@@ -2129,7 +2185,7 @@
         <div class="stats-grid">
           <div class="stat-box"><div class="stat-label">ВВП / час</div><div class="stat-val" style="color:#fde68a">${fmtMoney(c.hourlyGdp)}</div></div>
           <div class="stat-box"><div class="stat-label">Казна</div><div class="stat-val" style="color:#86efac">${fmtMoney(c.treasury)}</div></div>
-          <div class="stat-box"><div class="stat-label">Территория</div><div class="stat-val">${c.claims?.length || 0} чанк.</div></div>
+          <div class="stat-box"><div class="stat-label">Территория</div><div class="stat-val">${getCountryClaimCount(c)} чанк.</div></div>
           <div class="stat-box"><div class="stat-label">Здания / Вехи</div><div class="stat-val">${c.buildings || 0} / ${c.milestones || 0}</div></div>
           <div class="stat-box"><div class="stat-label">Валюта</div><div class="stat-val">${esc(c.currencySymbol || "")} ${esc(c.currencyCode || "")}</div></div>
           <div class="stat-box"><div class="stat-label">Рейтинг / Туристы</div><div class="stat-val">★ ${Number(c.rating || 0).toFixed(1)} (${c.visitors || 0})</div></div>
