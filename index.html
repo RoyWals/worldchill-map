@@ -292,13 +292,22 @@
     const TILE_PX_PER_CHUNK = 8;
     const TILE_SIZE = REGION_CHUNKS * TILE_PX_PER_CHUNK; // 256
     const DEFAULT_GIST_ID = "6c8f6446cb803cd6d773559fb5a3e13b";
+    const DEFAULT_GIST_OWNER = "RoyWals";
     const SEA_NORM = 72 / 255;
 
     const urlParams = new URLSearchParams(window.location.search);
     const paramGist = (urlParams.get("gist") || "").trim();
+    const paramOwner = (urlParams.get("owner") || "").trim();
     let gistId = paramGist || localStorage.getItem("worldchill_gist_id") || DEFAULT_GIST_ID;
+    let gistOwner = paramOwner || localStorage.getItem("worldchill_gist_owner") || DEFAULT_GIST_OWNER;
+    if (!gistOwner && window.location.hostname.endsWith(".github.io")) {
+      gistOwner = window.location.hostname.split(".")[0];
+    }
     if (paramGist) {
       localStorage.setItem("worldchill_gist_id", paramGist);
+    }
+    if (paramOwner) {
+      localStorage.setItem("worldchill_gist_owner", paramOwner);
     }
     const IS_GIST_HOST = window.location.protocol !== "file:" && (
       Boolean(gistId) ||
@@ -1070,19 +1079,23 @@
     }
 
     // ---------------- Tile Fetching (.mca Live World Surface) ----------------
+    let tileQueueActive = false;
+
     async function syncLiveTiles() {
       const list = Array.isArray(state.tiles) ? state.tiles : [];
       if (list.length === 0) {
         updateTileBadge();
         return;
       }
-      let anyUpdated = false;
+      const pending = [];
+      const refRx = (viewMode === "2d" ? cam2d.cx : cam25.cx) / REGION_CHUNKS;
+      const refRz = (viewMode === "2d" ? cam2d.cz : cam25.cz) / REGION_CHUNKS;
+
       for (const meta of list) {
         const key = meta.id || (meta.rx + "_" + meta.rz);
         const cached = tileCache.get(key);
         if (cached && cached.version >= meta.v) continue;
         if (cached && cached.loading) continue;
-
         tileCache.set(key, {
           rx: meta.rx,
           rz: meta.rz,
@@ -1091,16 +1104,43 @@
           colorImg: cached ? cached.colorImg : null,
           heightImg: cached ? cached.heightImg : null
         });
-
-        fetchOneTile(meta.rx, meta.rz, meta.v, key).then(ok => {
-          if (ok) {
-            compositeLiveTilesOntoTextures();
-            updateTileBadge();
-          }
-        });
-        anyUpdated = true;
+        const distSq = Math.pow(meta.rx - refRx, 2) + Math.pow(meta.rz - refRz, 2);
+        pending.push({ rx: meta.rx, rz: meta.rz, v: meta.v, key, distSq });
       }
-      if (!anyUpdated) updateTileBadge();
+      if (!pending.length) {
+        updateTileBadge();
+        return;
+      }
+      pending.sort((a, b) => a.distSq - b.distSq);
+      let completedSincePaint = 0;
+      const CONCURRENCY = 6;
+
+      async function workerLoop() {
+        while (pending.length) {
+          const item = pending.shift();
+          const ok = await fetchOneTile(item.rx, item.rz, item.v, item.key);
+          if (ok) {
+            completedSincePaint++;
+            if (completedSincePaint >= 6) {
+              completedSincePaint = 0;
+              compositeLiveTilesOntoTextures();
+              updateTileBadge();
+            }
+          }
+        }
+      }
+
+      if (tileQueueActive) return;
+      tileQueueActive = true;
+      try {
+        await Promise.all(Array.from({ length: Math.min(CONCURRENCY, pending.length) }, workerLoop));
+        if (completedSincePaint > 0) {
+          compositeLiveTilesOntoTextures();
+        }
+        updateTileBadge();
+      } finally {
+        tileQueueActive = false;
+      }
     }
 
     async function fetchOneTile(rx, rz, version, key) {
@@ -1108,15 +1148,22 @@
         let tileObj = null;
         if (IS_GIST_HOST && gistId) {
           const fname = "worldchill-tile-" + rx + "_" + rz + ".json";
-          const fileEntry = lastGistFiles?.[fname];
-          if (!fileEntry) return false;
-          let txt = fileEntry.content || "";
-          if (fileEntry.truncated && fileEntry.raw_url) {
-            const rawResp = await fetch(fileEntry.raw_url + "?t=" + Date.now());
+          if (gistOwner) {
+            const rawUrl = `https://gist.githubusercontent.com/${encodeURIComponent(gistOwner)}/${encodeURIComponent(gistId)}/raw/${fname}?v=${version}`;
+            const rawResp = await fetch(rawUrl);
             if (!rawResp.ok) return false;
-            txt = await rawResp.text();
+            tileObj = await rawResp.json();
+          } else {
+            const fileEntry = lastGistFiles?.[fname];
+            if (!fileEntry) return false;
+            let txt = fileEntry.content || "";
+            if (fileEntry.truncated && fileEntry.raw_url) {
+              const rawResp = await fetch(fileEntry.raw_url + "?v=" + version);
+              if (!rawResp.ok) return false;
+              txt = await rawResp.text();
+            }
+            tileObj = JSON.parse(txt);
           }
-          tileObj = JSON.parse(txt);
         } else {
           const resp = await fetch("/api/tile?rx=" + rx + "&rz=" + rz + "&v=" + version, { cache: "no-store" });
           if (!resp.ok) return false;
@@ -1173,29 +1220,44 @@
 
     async function loadState(manual = false) {
       try {
-        let nextState;
+        let nextState = null;
         if (IS_GIST_HOST) {
           if (!gistId) {
             document.getElementById("gistSetupBanner").style.display = "block";
             document.getElementById("liveStats").textContent = "Укажите Gist ID";
             return;
           }
-          const headers = { "Accept": "application/vnd.github+json" };
-          if (lastGistEtag && !manual) headers["If-None-Match"] = lastGistEtag;
-          const res = await fetch("https://api.github.com/gists/" + encodeURIComponent(gistId), { headers });
-          if (res.status === 304) return;
-          if (!res.ok) throw new Error("GitHub Gist HTTP " + res.status);
-          const etag = res.headers.get("ETag");
-          if (etag) lastGistEtag = etag;
-          const gistData = await res.json();
-          lastGistFiles = gistData.files || {};
-          const fileObj = lastGistFiles["worldchill-state.json"] || Object.values(lastGistFiles)[0];
-          if (!fileObj) throw new Error("Gist empty");
-          if (fileObj.truncated && fileObj.raw_url) {
-            const rawRes = await fetch(fileObj.raw_url + "?t=" + Date.now());
-            nextState = await rawRes.json();
-          } else {
-            nextState = JSON.parse(fileObj.content || "{}");
+          // Primary path: direct raw CDN URL (no GitHub API 60/hr rate limit / HTTP 403!)
+          if (gistOwner) {
+            const rawUrl = `https://gist.githubusercontent.com/${encodeURIComponent(gistOwner)}/${encodeURIComponent(gistId)}/raw/worldchill-state.json?t=${Date.now()}`;
+            const rawRes = await fetch(rawUrl, { cache: "no-store" });
+            if (rawRes.ok) {
+              nextState = await rawRes.json();
+            }
+          }
+          // Fallback only if owner isn't known yet or raw URL didn't resolve
+          if (!nextState) {
+            const headers = { "Accept": "application/vnd.github+json" };
+            if (lastGistEtag && !manual) headers["If-None-Match"] = lastGistEtag;
+            const res = await fetch("https://api.github.com/gists/" + encodeURIComponent(gistId), { headers });
+            if (res.status === 304) return;
+            if (!res.ok) throw new Error("GitHub Gist HTTP " + res.status);
+            const etag = res.headers.get("ETag");
+            if (etag) lastGistEtag = etag;
+            const gistData = await res.json();
+            if (gistData.owner?.login) {
+              gistOwner = gistData.owner.login;
+              localStorage.setItem("worldchill_gist_owner", gistOwner);
+            }
+            lastGistFiles = gistData.files || {};
+            const fileObj = lastGistFiles["worldchill-state.json"] || Object.values(lastGistFiles)[0];
+            if (!fileObj) throw new Error("Gist empty");
+            if (fileObj.truncated && fileObj.raw_url) {
+              const rawRes = await fetch(fileObj.raw_url + "?t=" + Date.now());
+              nextState = await rawRes.json();
+            } else {
+              nextState = JSON.parse(fileObj.content || "{}");
+            }
           }
         } else {
           const res = await fetch("/api/state", { cache: "no-store" });
