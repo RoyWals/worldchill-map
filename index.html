@@ -1154,8 +1154,9 @@
         let tileObj = null;
         if (IS_GIST_HOST && gistId) {
           const fname = "worldchill-tile-" + rx + "_" + rz + ".json";
+          const tileGistId = state.tilesGistId || gistId;
           if (gistOwner) {
-            const rawUrl = `https://gist.githubusercontent.com/${encodeURIComponent(gistOwner)}/${encodeURIComponent(gistId)}/raw/${fname}?v=${version}`;
+            const rawUrl = `https://gist.githubusercontent.com/${encodeURIComponent(gistOwner)}/${encodeURIComponent(tileGistId)}/raw/${fname}?v=${version}`;
             const rawResp = await fetch(rawUrl);
             if (!rawResp.ok) return false;
             tileObj = await rawResp.json();
