@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="ru">
 <head>
   <meta charset="UTF-8" />
@@ -1102,6 +1102,10 @@
 
         const emb = chunkEmbassyMap.get(k);
         const city = chunkCityMap.get(k);
+        const nCitySame = city && chunkCityMap.get(cx + "," + (cz - 1))?.id === city.id && chunkCityMap.get(cx + "," + (cz - 1))?.countryId === city.countryId;
+        const sCitySame = city && chunkCityMap.get(cx + "," + (cz + 1))?.id === city.id && chunkCityMap.get(cx + "," + (cz + 1))?.countryId === city.countryId;
+        const wCitySame = city && chunkCityMap.get((cx - 1) + "," + cz)?.id === city.id && chunkCityMap.get((cx - 1) + "," + cz)?.countryId === city.countryId;
+        const eCitySame = city && chunkCityMap.get((cx + 1) + "," + cz)?.id === city.id && chunkCityMap.get((cx + 1) + "," + cz)?.countryId === city.countryId;
         let cr, cg, cb;
         if (layers.heatmap) {
           let t = city ? Math.max(city.placedBlocks > 0 ? 0.18 : 0.05, (city.blockDensity || 0) / maxCityDensity)
@@ -1117,17 +1121,30 @@
         for (let sy = 0; sy < 2; sy++) {
           for (let sx = 0; sx < 2; sx++) {
             const onEdge = (sy === 0 && !nSame) || (sy === 1 && !sSame) || (sx === 0 && !wSame) || (sx === 1 && !eSame);
+            const onCityEdge = !layers.heatmap && layers.cities && city && ((sy === 0 && !nCitySame) || (sy === 1 && !sCitySame) || (sx === 0 && !wCitySame) || (sx === 1 && !eCitySame));
             const p = ((gz * 2 + sy) * cw + (gx * 2 + sx)) * 4;
             if (onEdge && layers.borders) {
               data[p] = Math.min(255, cr + (isSel ? 65 : 35));
               data[p + 1] = Math.min(255, cg + (isSel ? 65 : 35));
               data[p + 2] = Math.min(255, cb + (isSel ? 65 : 35));
               data[p + 3] = 245;
+            } else if (onCityEdge) {
+              data[p] = 251;
+              data[p + 1] = 191;
+              data[p + 2] = 36;
+              data[p + 3] = 248;
             } else if (layers.territories || layers.heatmap) {
-              data[p] = cr;
-              data[p + 1] = cg;
-              data[p + 2] = cb;
-              data[p + 3] = layers.heatmap ? 195 : (isSel ? 170 : 120);
+              if (!layers.heatmap && layers.cities && city) {
+                data[p] = Math.min(255, Math.round(cr * 0.65 + 251 * 0.35));
+                data[p + 1] = Math.min(255, Math.round(cg * 0.65 + 191 * 0.35));
+                data[p + 2] = Math.min(255, Math.round(cb * 0.65 + 36 * 0.35));
+                data[p + 3] = 165;
+              } else {
+                data[p] = cr;
+                data[p + 1] = cg;
+                data[p + 2] = cb;
+                data[p + 3] = layers.heatmap ? 195 : (isSel ? 170 : 120);
+              }
             }
           }
         }
@@ -1760,6 +1777,33 @@
           ovCtx.restore();
         }
       }
+      if (layers.cities) {
+        for (const city of state.cities || []) {
+          const arr = city.claims || [];
+          if (arr.length < 2) continue;
+          ovCtx.save();
+          ovCtx.strokeStyle = "#fbbf24";
+          ovCtx.lineWidth = Math.max(1.5, cam2d.zoom * 0.25);
+          ovCtx.setLineDash([5, 3]);
+          ovCtx.beginPath();
+          for (let i = 0; i + 1 < arr.length; i += 2) {
+            const cx = arr[i], cz = arr[i + 1];
+            const x0 = ox + cx * cam2d.zoom;
+            const y0 = oz + cz * cam2d.zoom;
+            const s = cam2d.zoom;
+            const n = chunkCityMap.get(cx + "," + (cz - 1));
+            const so = chunkCityMap.get(cx + "," + (cz + 1));
+            const w = chunkCityMap.get((cx - 1) + "," + cz);
+            const e = chunkCityMap.get((cx + 1) + "," + cz);
+            if (!n || n.id !== city.id || n.countryId !== city.countryId) { ovCtx.moveTo(x0, y0); ovCtx.lineTo(x0 + s, y0); }
+            if (!so || so.id !== city.id || so.countryId !== city.countryId) { ovCtx.moveTo(x0, y0 + s); ovCtx.lineTo(x0 + s, y0 + s); }
+            if (!w || w.id !== city.id || w.countryId !== city.countryId) { ovCtx.moveTo(x0, y0); ovCtx.lineTo(x0, y0 + s); }
+            if (!e || e.id !== city.id || e.countryId !== city.countryId) { ovCtx.moveTo(x0 + s, y0); ovCtx.lineTo(x0 + s, y0 + s); }
+          }
+          ovCtx.stroke();
+          ovCtx.restore();
+        }
+      }
 
       // Grid
       if (layers.grid && cam2d.zoom >= 3.5) {
@@ -2005,13 +2049,17 @@
       ovCtx.lineWidth = 1.5;
       ovCtx.strokeStyle = "#0f172a";
       ovCtx.stroke();
-      const label = "🏙 " + city.name;
+      const showDensity = viewMode === "2d" ? cam2d.zoom >= 3.5 : (viewMode === "25d" ? cam25.zoom >= 2.0 : cam3d.zoom >= 2.0);
+      const label = "🏙 " + city.name + (showDensity && city.blockDensity > 0 ? " · " + Math.round(city.blockDensity) + " бл/ч" : "");
       ovCtx.font = '600 10.5px Inter, "Segoe UI", sans-serif';
       const w = ovCtx.measureText(label).width;
-      ovCtx.fillStyle = "rgba(15, 23, 42, 0.82)";
+      ovCtx.fillStyle = "rgba(15, 23, 42, 0.85)";
       ovCtx.beginPath();
       ovCtx.roundRect(sx - w / 2 - 5, sy + 6, w + 10, 15, 4);
       ovCtx.fill();
+      ovCtx.lineWidth = 1;
+      ovCtx.strokeStyle = "rgba(251, 191, 36, 0.75)";
+      ovCtx.stroke();
       ovCtx.fillStyle = "#fde68a";
       ovCtx.textAlign = "center";
       ovCtx.textBaseline = "middle";
@@ -2209,10 +2257,16 @@
       const bNames = ["Океан", "Побережье", "Горы/Снег", "Лес", "Пустыня", "Равнина"];
       const bName = bNames[biomeAtGrid(ch.cx - MIN_CX, ch.cz - MIN_CZ)] || "Земля";
       document.getElementById("hoverCoords").textContent = `Чанк ${ch.cx}, ${ch.cz} · X:${bx} Z:${bz} (${bName})`;
-      const owner = chunkOwnerMap.get(ch.cx + "," + ch.cz);
+      const key = ch.cx + "," + ch.cz;
+      const owner = chunkOwnerMap.get(key);
+      const city = chunkCityMap.get(key);
+      const emb = chunkEmbassyMap.get(key);
       const ownerEl = document.getElementById("hoverOwner");
       if (owner) {
-        ownerEl.textContent = "⚑ " + owner.name;
+        let extra = "";
+        if (emb) extra += ` · 🏛 Посольство ${emb.ownerCountryName}`;
+        else if (city) extra += ` · 🏙 ${city.name} (${Number(city.blockDensity || 0).toFixed(0)} бл/ч)`;
+        ownerEl.textContent = "⚑ " + owner.name + extra;
         ownerEl.style.color = owner.color || "#38bdf8";
       } else {
         ownerEl.textContent = "Свободная земля";
@@ -2463,6 +2517,10 @@
         }).join("");
       };
 
+      const countryCities = (state.cities || [])
+        .filter(city => city.countryId === c.id)
+        .sort((a, b) => (b.blockDensity || 0) - (a.blockDensity || 0) || (b.placedBlocks || 0) - (a.placedBlocks || 0));
+
       document.getElementById("dossierBody").innerHTML = `
         ${c.motd ? `<div style="padding:8px 10px;border-radius:8px;background:rgba(15,23,42,0.75);border:1px solid var(--border);font-style:italic;color:#cbd5e1;">«${esc(c.motd)}»</div>` : ""}
         <div class="stats-grid">
@@ -2473,6 +2531,10 @@
           <div class="stat-box"><div class="stat-label">Валюта</div><div class="stat-val">${esc(c.currencySymbol || "")} ${esc(c.currencyCode || "")}</div></div>
           <div class="stat-box"><div class="stat-label">Рейтинг / Туристы</div><div class="stat-val">★ ${Number(c.rating || 0).toFixed(1)} (${c.visitors || 0})</div></div>
         </div>
+        ${countryCities.length ? `<div><div class="section-title">Города (${countryCities.length})</div><div class="chip-wrap">${countryCities.map(ct => {
+          const pt = ct.spawn || (ct.claims?.length >= 2 ? { cx: ct.claims[0], cz: ct.claims[1] } : null);
+          return `<span class="chip" style="border-color:rgba(251,191,36,0.45);background:rgba(251,191,36,0.12);color:#fde68a;" data-city-cx="${pt ? pt.cx : 0}" data-city-cz="${pt ? pt.cz : 0}">🏙 ${esc(ct.name)} (${ct.placedBlocks || 0} бл · ${Number(ct.blockDensity || 0).toFixed(0)} бл/ч · ${fmtMoney(ct.hourlyGdp || 0)}/ч)</span>`;
+        }).join("")}</div></div>` : ""}
         ${c.alliance ? `<div><div class="section-title">Альянс</div><span class="chip ally">🛡 ${esc(c.alliance)}</span></div>` : ""}
         ${c.wonders?.length ? `<div><div class="section-title">Чудеса света</div><div class="chip-wrap">${c.wonders.map(w => `<span class="chip wonder">🏛 ${esc(w)}</span>`).join("")}</div></div>` : ""}
         <div><div class="section-title">Союзники</div><div class="chip-wrap">${renderRelChips(c.allies, "ally")}</div></div>
@@ -2484,6 +2546,9 @@
           if (countryById.has(el.dataset.rel)) selectCountry(el.dataset.rel, true);
         });
       });
+      document.getElementById("dossierBody").querySelectorAll(".chip[data-city-cx]").forEach(el => {
+        el.addEventListener("click", () => focusWorldChunk(Number(el.dataset.cityCx), Number(el.dataset.cityCz)));
+      });
     }
 
     // Bind buttons
@@ -2493,7 +2558,7 @@
         const k = btn.dataset.layer;
         layers[k] = !layers[k];
         btn.classList.toggle("active", layers[k]);
-        if (k === "territories" || k === "borders" || k === "heatmap") rebuildCountryOverlayTexture();
+        if (k === "territories" || k === "borders" || k === "heatmap" || k === "cities") rebuildCountryOverlayTexture();
       });
     });
     document.getElementById("nightModeBtn").addEventListener("click", () => {
