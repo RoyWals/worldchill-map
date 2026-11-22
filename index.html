@@ -61,8 +61,8 @@
 
     .btn {
       background: rgba(30, 41, 59, 0.78); color: var(--text);
-      border: 1px solid var(--border); border-radius: 8px;
-      padding: 5px 10px; font-size: 12px; font-weight: 500; cursor: pointer;
+      border: 1px solid var(--border); border-radius: 7px;
+      padding: 4px 8px; font-size: 11.5px; font-weight: 500; cursor: pointer;
       transition: 0.15s ease;
     }
     .btn:hover { background: rgba(51, 65, 85, 0.94); border-color: rgba(148, 163, 184, 0.4); }
@@ -1934,17 +1934,17 @@
 
       for (const batch of voxelState.batches) {
         gl.bindBuffer(gl.ARRAY_BUFFER, batch.vb);
-        gl.enableVertexAttribArray(aPos);
-        gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, stride, 0);
-        gl.enableVertexAttribArray(aColor);
-        gl.vertexAttribPointer(aColor, 3, gl.FLOAT, false, stride, 12);
-        gl.enableVertexAttribArray(aShade);
-        gl.vertexAttribPointer(aShade, 1, gl.FLOAT, false, stride, 24);
-        gl.enableVertexAttribArray(aFlags);
-        gl.vertexAttribPointer(aFlags, 2, gl.FLOAT, false, stride, 28);
+        if (aPos >= 0) { gl.enableVertexAttribArray(aPos); gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, stride, 0); }
+        if (aColor >= 0) { gl.enableVertexAttribArray(aColor); gl.vertexAttribPointer(aColor, 3, gl.FLOAT, false, stride, 12); }
+        if (aShade >= 0) { gl.enableVertexAttribArray(aShade); gl.vertexAttribPointer(aShade, 1, gl.FLOAT, false, stride, 24); }
+        if (aFlags >= 0) { gl.enableVertexAttribArray(aFlags); gl.vertexAttribPointer(aFlags, 2, gl.FLOAT, false, stride, 28); }
         gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, batch.ib);
         gl.drawElements(gl.TRIANGLES, batch.count, gl.UNSIGNED_SHORT, 0);
       }
+      if (aPos >= 0) gl.disableVertexAttribArray(aPos);
+      if (aColor >= 0) gl.disableVertexAttribArray(aColor);
+      if (aShade >= 0) gl.disableVertexAttribArray(aShade);
+      if (aFlags >= 0) gl.disableVertexAttribArray(aFlags);
       return { mode: "voxel", mvp };
     }
 
@@ -2007,6 +2007,7 @@
       gl.uniform1f(gl.getUniformLocation(progTerrain25, "uTime"), nowSec);
 
       gl.drawElements(gl.TRIANGLES, meshTerrain25.count, gl.UNSIGNED_SHORT, 0);
+      if (aGrid >= 0) gl.disableVertexAttribArray(aGrid);
       return { mvp, eye: [eyeX, eyeY, eyeZ], reliefWorld };
     }
 
@@ -2070,6 +2071,8 @@
       gl.uniform1f(gl.getUniformLocation(progGlobe3, "uTime"), nowSec);
 
       gl.drawElements(gl.TRIANGLES, meshGlobe3.count, gl.UNSIGNED_SHORT, 0);
+      if (aPos >= 0) gl.disableVertexAttribArray(aPos);
+      if (aUv >= 0) gl.disableVertexAttribArray(aUv);
       return { rot, aspect };
     }
 
