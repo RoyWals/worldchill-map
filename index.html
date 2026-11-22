@@ -206,6 +206,7 @@
       <div class="mode-switch" title="Режим отображения карты">
         <button class="mode-btn" data-view="2d">2D</button>
         <button class="mode-btn active" data-view="25d">⛰ 2.5D</button>
+        <button class="mode-btn" data-view="voxel" title="Воксельный 3D-вид городов (как BlueMap) + полёт WASD">🧊 3D Город</button>
         <button class="mode-btn" data-view="3d">🌐 3D</button>
       </div>
       <div class="live-pill">
@@ -272,6 +273,7 @@
       <span id="hoverOwner" style="font-weight:600"></span>
       <span id="tileStats" style="color:#7dd3fc;font-size:11px;"></span>
       <span id="viewHint" style="color:var(--muted);font-size:11px;"></span>
+      <span id="voxelCityPills" style="display:none;gap:5px;flex-wrap:wrap;align-items:center;"></span>
     </div>
     <div class="hud-box zoom-controls">
       <button class="btn" id="spinBtn" style="display:none" title="Автовращение глобуса">⟳ Крутить</button>
@@ -396,6 +398,14 @@
       autoSpin: true
     };
 
+    // Camera state for Mini-BlueMap Voxel 3D City view (in block units!)
+    const camVoxel = {
+      x: 1627, y: 72, z: -1782, yaw: 0.65, pitch: 0.52, dist: 120,
+      targetX: 1627, targetY: 72, targetZ: -1782, targetYaw: 0.65, targetPitch: 0.52, targetDist: 120
+    };
+    const keysDown = new Set();
+    let voxelTargetCityKey = "";
+
     const reliefSteps = [0.8, 1.5, 2.4, 3.6];
     let reliefIndex = 1;
     let reliefMult = reliefSteps[reliefIndex];
@@ -503,8 +513,10 @@
     let glReady = false;
     let progTerrain25 = null;
     let progGlobe3 = null;
+    let progVoxel = null;
     let meshTerrain25 = null;
     let meshGlobe3 = null;
+    let voxelState = { key: "", batches: [], centerBx: 1627, centerBz: -1782, building: false, lastTryMs: 0, isHd: false };
     let texColor = null;
     let texHeight = null;
     let texCountry = null;
@@ -762,6 +774,58 @@
         }
       `;
       progGlobe3 = linkProgram(vs3, fs3);
+
+      // Program 3: Mini-BlueMap Voxel 3D City Renderer (exposed faces + AO + water + night emissives)
+      const vsVoxel = `
+        attribute vec3 aPos;
+        attribute vec3 aColor;
+        attribute float aShade;
+        attribute vec2 aFlags;
+        uniform mat4 uMvp;
+        varying vec3 vColor;
+        varying float vShade;
+        varying vec2 vFlags;
+        varying vec3 vWorldPos;
+        void main() {
+          vColor = aColor;
+          vShade = aShade;
+          vFlags = aFlags;
+          vWorldPos = aPos;
+          gl_Position = uMvp * vec4(aPos, 1.0);
+        }
+      `;
+      const fsVoxel = `
+        precision highp float;
+        uniform vec3 uCamPos;
+        uniform float uNightMode;
+        uniform float uTime;
+        varying vec3 vColor;
+        varying float vShade;
+        varying vec2 vFlags;
+        varying vec3 vWorldPos;
+        void main() {
+          vec3 col = vColor * vShade;
+          if (vFlags.y > 0.5) {
+            float wave = sin(vWorldPos.x * 0.45 + uTime * 2.2) * cos(vWorldPos.z * 0.45 - uTime * 1.7);
+            col += vec3(0.05, 0.11, 0.16) * (0.4 + 0.6 * wave);
+          }
+          if (uNightMode > 0.5) {
+            if (vFlags.x > 0.5) {
+              col = mix(vColor, vec3(1.0, 0.88, 0.46), 0.42) * 1.48;
+            } else {
+              col *= vec3(0.19, 0.26, 0.43);
+            }
+          } else if (vFlags.x > 0.5) {
+            col *= 1.12;
+          }
+          float camDist = length(uCamPos - vWorldPos);
+          float fog = smoothstep(180.0, 520.0, camDist);
+          vec3 skyFog = uNightMode > 0.5 ? vec3(0.04, 0.08, 0.18) : vec3(0.62, 0.82, 0.98);
+          col = mix(col, skyFog, fog * 0.72);
+          gl_FragColor = vec4(col, 1.0);
+        }
+      `;
+      progVoxel = linkProgram(vsVoxel, fsVoxel);
 
       if (!progTerrain25 || !progGlobe3) return;
 
@@ -1032,8 +1096,12 @@
       compositeLiveTilesOntoTextures();
     }
 
+    let tileCompositeSeq = 0;
+
     function compositeLiveTilesOntoTextures() {
       if (!synthColorCtx || !synthHeightCtx) return;
+      tileCompositeSeq++;
+      voxelState.key = "";
       const pxPerChunkX = TEX_W / WORLD_W;
       const pxPerChunkZ = TEX_H / WORLD_H;
 
@@ -1427,6 +1495,23 @@
       if (selectedCountryId && !countryById.has(selectedCountryId)) {
         selectedCountryId = null;
       }
+      voxelState.key = "";
+      renderVoxelCityPills();
+    }
+
+    function renderVoxelCityPills() {
+      const box = document.getElementById("voxelCityPills");
+      if (!box) return;
+      const top = [...(state.cities || [])]
+        .sort((a, b) => (b.blockDensity || 0) - (a.blockDensity || 0) || (b.placedBlocks || 0) - (a.placedBlocks || 0))
+        .slice(0, 6);
+      if (!top.length) { box.innerHTML = ""; return; }
+      box.innerHTML = `<span style="color:var(--muted);font-size:11px;">Города:</span>` + top.map((c, idx) =>
+        `<button class="btn" style="padding:2px 7px;font-size:11px;border-color:rgba(251,191,36,0.45);color:#fde68a;" data-vcity="${idx}">🏙 ${esc(c.name)}</button>`
+      ).join("");
+      box.querySelectorAll("[data-vcity]").forEach(btn => {
+        btn.addEventListener("click", () => openCityInVoxel3D(top[Number(btn.dataset.vcity)]));
+      });
     }
 
     function updateLivePill() {
@@ -1453,17 +1538,22 @@
     function updateHudVisibility() {
       const is25 = viewMode === "25d";
       const is3 = viewMode === "3d";
+      const isVoxel = viewMode === "voxel";
       document.getElementById("spinBtn").style.display = is3 ? "inline-block" : "none";
       document.getElementById("spinBtn").classList.toggle("active", cam3d.autoSpin);
-      document.getElementById("tiltDownBtn").style.display = is25 ? "inline-block" : "none";
-      document.getElementById("tiltUpBtn").style.display = is25 ? "inline-block" : "none";
-      document.getElementById("rotLeftBtn").style.display = (is25 || is3) ? "inline-block" : "none";
-      document.getElementById("rotRightBtn").style.display = (is25 || is3) ? "inline-block" : "none";
+      document.getElementById("tiltDownBtn").style.display = (is25 || isVoxel) ? "inline-block" : "none";
+      document.getElementById("tiltUpBtn").style.display = (is25 || isVoxel) ? "inline-block" : "none";
+      document.getElementById("rotLeftBtn").style.display = (is25 || is3 || isVoxel) ? "inline-block" : "none";
+      document.getElementById("rotRightBtn").style.display = (is25 || is3 || isVoxel) ? "inline-block" : "none";
       document.getElementById("reliefBtn").style.display = (is25 || is3) ? "inline-block" : "none";
       document.getElementById("reliefBtn").textContent = "⛰ ×" + reliefMult;
+      const pillsEl = document.getElementById("voxelCityPills");
+      if (pillsEl) pillsEl.style.display = isVoxel ? "inline-flex" : "none";
 
       const hint = document.getElementById("viewHint");
-      if (is25) {
+      if (isVoxel) {
+        hint.textContent = "WASD — полёт · ПКМ/Shift — вращение 3D · ЛКМ — сдвиг · Колесо — зум";
+      } else if (is25) {
         hint.textContent = "ЛКМ — сдвиг · ПКМ/Shift — наклон и поворот 3D · Колесо — зум";
       } else if (is3) {
         hint.textContent = "ЛКМ — вращать глобус · Колесо — зум · Клик по стране — досье";
@@ -1477,6 +1567,7 @@
       let pct = 100;
       if (viewMode === "2d") pct = Math.round((cam2d.zoom / 2.0) * 100);
       else if (viewMode === "25d") pct = Math.round((cam25.zoom / 1.8) * 100);
+      else if (viewMode === "voxel") pct = Math.round((120 / Math.max(20, camVoxel.dist)) * 100);
       else pct = Math.round(cam3d.zoom * 100);
       document.getElementById("zoomLabel").textContent = pct + "%";
     }
@@ -1486,6 +1577,23 @@
       localStorage.setItem("worldchill_view_mode", mode);
       document.querySelectorAll(".mode-btn").forEach(b => b.classList.toggle("active", b.dataset.view === mode));
       glCanvas.style.display = (mode === "2d") ? "none" : "block";
+      if (mode !== "voxel") glCanvas.style.background = "transparent";
+      if (mode === "voxel" && (!voxelTargetCityKey || !voxelState.batches.length)) {
+        const cities = [...(state.cities || [])].sort((a, b) => (b.blockDensity || 0) - (a.blockDensity || 0));
+        if (cities.length && !voxelTargetCityKey) {
+          const best = cities[0];
+          const pt = best.spawn || (best.claims?.length >= 2 ? { x: best.claims[0] * 16 + 8, z: best.claims[1] * 16 + 8 } : null);
+          voxelTargetCityKey = (best.countryId || "") + ":" + (best.id || "");
+          if (pt) {
+            camVoxel.targetX = camVoxel.x = pt.x ?? (pt.cx * 16 + 8);
+            camVoxel.targetZ = camVoxel.z = pt.z ?? (pt.cz * 16 + 8);
+          }
+        } else if (!cities.length) {
+          camVoxel.targetX = camVoxel.x = cam25.cx * 16 + 8;
+          camVoxel.targetZ = camVoxel.z = cam25.cz * 16 + 8;
+        }
+        voxelState.key = "";
+      }
       updateHudVisibility();
     }
 
@@ -1507,6 +1615,16 @@
         } else {
           cam25.targetZoom = Math.max(cam25.targetZoom, 4.8);
         }
+      } else if (viewMode === "voxel") {
+        camVoxel.targetX = cx * 16 + 8;
+        camVoxel.targetZ = cz * 16 + 8;
+        if (isReset) {
+          camVoxel.targetDist = 180;
+          camVoxel.targetPitch = 0.62;
+        } else {
+          camVoxel.targetDist = Math.min(camVoxel.targetDist, 125);
+        }
+        voxelState.key = "";
       } else {
         cam3d.autoSpin = false;
         const u = (cx - MIN_CX) / WORLD_W;
@@ -1518,15 +1636,316 @@
       }
     }
 
+    function openCityInVoxel3D(city) {
+      if (!city) return;
+      const pt = city.spawn || (city.claims?.length >= 2 ? { cx: city.claims[0], cz: city.claims[1], x: city.claims[0] * 16 + 8, z: city.claims[1] * 16 + 8 } : null);
+      voxelTargetCityKey = (city.countryId || "") + ":" + (city.id || "");
+      if (pt) {
+        camVoxel.targetX = pt.x ?? (pt.cx * 16 + 8);
+        camVoxel.targetZ = pt.z ?? (pt.cz * 16 + 8);
+        camVoxel.x = camVoxel.targetX;
+        camVoxel.z = camVoxel.targetZ;
+      }
+      camVoxel.targetY = 68;
+      camVoxel.targetDist = 115;
+      camVoxel.targetPitch = 0.52;
+      voxelState.key = "";
+      setViewMode("voxel");
+    }
+
     function zoomBy(factor) {
       if (viewMode === "2d") {
         cam2d.targetZoom = Math.max(0.7, Math.min(28, cam2d.targetZoom * factor));
       } else if (viewMode === "25d") {
         cam25.targetZoom = Math.max(0.7, Math.min(18, cam25.targetZoom * factor));
+      } else if (viewMode === "voxel") {
+        camVoxel.targetDist = Math.max(22, Math.min(360, camVoxel.targetDist / factor));
       } else {
         cam3d.targetZoom = Math.max(0.72, Math.min(4.8, cam3d.targetZoom * factor));
       }
       updateZoomLabel();
+    }
+
+    // ---------------- Mini-BlueMap Voxel 3D City Builder & Renderer ----------------
+    function loadPngPixels(src) {
+      return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => {
+          const c = document.createElement("canvas");
+          c.width = img.width;
+          c.height = img.height;
+          const x = c.getContext("2d");
+          x.drawImage(img, 0, 0);
+          resolve({ w: img.width, h: img.height, data: x.getImageData(0, 0, img.width, img.height).data });
+        };
+        img.onerror = reject;
+        img.src = src;
+      });
+    }
+
+    function disposeVoxelBatches() {
+      if (!gl) return;
+      for (const b of voxelState.batches) {
+        if (b.vb) gl.deleteBuffer(b.vb);
+        if (b.ib) gl.deleteBuffer(b.ib);
+      }
+      voxelState.batches = [];
+    }
+
+    function findNearestVoxelCity(bx, bz) {
+      let best = null, bestDist2 = Infinity;
+      for (const city of state.cities || []) {
+        const pt = city.spawn || (city.claims?.length >= 2 ? { x: city.claims[0] * 16 + 8, z: city.claims[1] * 16 + 8 } : null);
+        if (!pt) continue;
+        const dx = (pt.x ?? (pt.cx * 16 + 8)) - bx;
+        const dz = (pt.z ?? (pt.cz * 16 + 8)) - bz;
+        const d2 = dx * dx + dz * dz;
+        const key = (city.countryId || "") + ":" + (city.id || "");
+        if (key === voxelTargetCityKey && d2 < 240 * 240) return city;
+        if (d2 < 200 * 200 && d2 < bestDist2) {
+          bestDist2 = d2;
+          best = city;
+        }
+      }
+      return best;
+    }
+
+    function ensureVoxelMesh() {
+      if (!glReady || !progVoxel || voxelState.building) return;
+      const now = performance.now();
+      const nearCity = findNearestVoxelCity(camVoxel.targetX, camVoxel.targetZ);
+      const hasHd = Boolean(nearCity && nearCity.voxel && nearCity.voxel.colorPng && nearCity.voxel.heightPng);
+      const desiredKey = hasHd
+        ? `hd:${nearCity.countryId}:${nearCity.id}:${nearCity.voxel.colorPng.length}:${tileCompositeSeq}`
+        : `loc:${Math.round(camVoxel.targetX / 48)},${Math.round(camVoxel.targetZ / 48)}:${tileCompositeSeq}`;
+      if (voxelState.key === desiredKey) return;
+      if (now - voxelState.lastTryMs < 350) return;
+      voxelState.lastTryMs = now;
+      voxelState.building = true;
+
+      if (hasHd) {
+        const v = nearCity.voxel;
+        Promise.all([loadPngPixels(v.colorPng), loadPngPixels(v.heightPng)])
+          .then(([colImg, hImg]) => {
+            buildVoxelMeshFromArrays(
+              v.minBx, v.minBz, v.w, v.h, v.step, v.baseY,
+              colImg.data, hImg.data, true
+            );
+            voxelState.key = desiredKey;
+            voxelState.isHd = true;
+          })
+          .catch(() => {
+            buildFallbackLocalVoxelMesh();
+            voxelState.key = desiredKey;
+            voxelState.isHd = false;
+          })
+          .finally(() => { voxelState.building = false; });
+      } else {
+        buildFallbackLocalVoxelMesh();
+        voxelState.key = desiredKey;
+        voxelState.isHd = false;
+        voxelState.building = false;
+      }
+    }
+
+    function buildFallbackLocalVoxelMesh() {
+      if (!synthColorCtx || !synthHeightCtx) return;
+      const w = 112, h = 112, step = 2;
+      const minBx = Math.round((camVoxel.targetX - (w * step) / 2) / step) * step;
+      const minBz = Math.round((camVoxel.targetZ - (h * step) / 2) / step) * step;
+      const colData = synthColorCtx.getImageData(0, 0, TEX_W, TEX_H).data;
+      const hData = synthHeightCtx.getImageData(0, 0, TEX_W, TEX_H).data;
+
+      const cOut = new Uint8ClampedArray(w * h * 4);
+      const hOut = new Uint8ClampedArray(w * h * 4);
+      const pxPerBlockX = TEX_W / (WORLD_W * 16);
+      const pxPerBlockZ = TEX_H / (WORLD_H * 16);
+
+      for (let gz = 0; gz < h; gz++) {
+        const bz = minBz + gz * step;
+        const tz = Math.max(0, Math.min(TEX_H - 1, Math.floor((bz - MIN_CZ * 16) * pxPerBlockZ)));
+        for (let gx = 0; gx < w; gx++) {
+          const bx = minBx + gx * step;
+          const tx = Math.max(0, Math.min(TEX_W - 1, Math.floor((bx - MIN_CX * 16) * pxPerBlockX)));
+          const sp = (tz * TEX_W + tx) * 4;
+          const dp = (gz * w + gx) * 4;
+          const r = colData[sp], g = colData[sp + 1], b = colData[sp + 2];
+          const hn = hData[sp];
+          const isWater = hn <= 72 && b > r + 15;
+          const worldY = hn <= 72 ? 62 : Math.round(62 + (hn - 72) * 0.85);
+          cOut[dp] = r; cOut[dp + 1] = g; cOut[dp + 2] = b; cOut[dp + 3] = 255;
+          hOut[dp] = Math.max(1, Math.min(255, worldY - 48));
+          hOut[dp + 1] = (r > 235 && g > 200) ? 255 : 0; // warm glow hint for lanterns/light roofs
+          hOut[dp + 2] = isWater ? 255 : 0;
+          hOut[dp + 3] = 255;
+        }
+      }
+      buildVoxelMeshFromArrays(minBx, minBz, w, h, step, 48, cOut, hOut, false);
+    }
+
+    function buildVoxelMeshFromArrays(minBx, minBz, w, h, step, baseY, colData, hData, blendTerrain) {
+      disposeVoxelBatches();
+      const sy = new Float32Array(w * h);
+      const rgb = new Float32Array(w * h * 3);
+      const emit = new Uint8Array(w * h);
+      const water = new Uint8Array(w * h);
+
+      let synthCol = null, synthH = null;
+      const pxPerBlockX = TEX_W / (WORLD_W * 16);
+      const pxPerBlockZ = TEX_H / (WORLD_H * 16);
+      if (blendTerrain && synthColorCtx && synthHeightCtx) {
+        synthCol = synthColorCtx.getImageData(0, 0, TEX_W, TEX_H).data;
+        synthH = synthHeightCtx.getImageData(0, 0, TEX_W, TEX_H).data;
+      }
+
+      for (let gz = 0; gz < h; gz++) {
+        for (let gx = 0; gx < w; gx++) {
+          const i = gz * w + gx;
+          const p = i * 4;
+          if (hData[p + 3] > 0) {
+            sy[i] = baseY + hData[p];
+            rgb[i * 3] = colData[p] / 255;
+            rgb[i * 3 + 1] = colData[p + 1] / 255;
+            rgb[i * 3 + 2] = colData[p + 2] / 255;
+            emit[i] = hData[p + 1] > 128 ? 1 : 0;
+            water[i] = hData[p + 2] > 128 ? 1 : 0;
+          } else if (synthCol && synthH) {
+            const bx = minBx + gx * step, bz = minBz + gz * step;
+            const tx = Math.max(0, Math.min(TEX_W - 1, Math.floor((bx - MIN_CX * 16) * pxPerBlockX)));
+            const tz = Math.max(0, Math.min(TEX_H - 1, Math.floor((bz - MIN_CZ * 16) * pxPerBlockZ)));
+            const sp = (tz * TEX_W + tx) * 4;
+            const hn = synthH[sp];
+            sy[i] = hn <= 72 ? 62 : Math.round(62 + (hn - 72) * 0.85);
+            rgb[i * 3] = synthCol[sp] / 255;
+            rgb[i * 3 + 1] = synthCol[sp + 1] / 255;
+            rgb[i * 3 + 2] = synthCol[sp + 2] / 255;
+            water[i] = (hn <= 72 && synthCol[sp + 2] > synthCol[sp] + 15) ? 1 : 0;
+          } else {
+            sy[i] = 62;
+            rgb[i * 3] = 0.25; rgb[i * 3 + 1] = 0.42; rgb[i * 3 + 2] = 0.24;
+          }
+        }
+      }
+
+      const batches = [];
+      let vArr = [], iArr = [], vCount = 0;
+      const flushBatch = () => {
+        if (!iArr.length) return;
+        const vb = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, vb);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vArr), gl.STATIC_DRAW);
+        const ib = gl.createBuffer();
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ib);
+        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(iArr), gl.STATIC_DRAW);
+        batches.push({ vb, ib, count: iArr.length });
+        vArr = []; iArr = []; vCount = 0;
+      };
+      const pushQuad = (x0,y0,z0, x1,y1,z1, x2,y2,z2, x3,y3,z3, r,g,b, shTop, shBot, em, wa) => {
+        if (vCount + 4 > 60000) flushBatch();
+        const b0 = vCount;
+        vArr.push(
+          x0,y0,z0, r,g,b, shTop, em, wa,
+          x1,y1,z1, r,g,b, shBot, em, wa,
+          x2,y2,z2, r,g,b, shBot, em, wa,
+          x3,y3,z3, r,g,b, shTop, em, wa
+        );
+        iArr.push(b0, b0 + 1, b0 + 2, b0, b0 + 2, b0 + 3);
+        vCount += 4;
+      };
+
+      for (let gz = 0; gz < h; gz++) {
+        const z0 = minBz + gz * step, z1 = z0 + step;
+        for (let gx = 0; gx < w; gx++) {
+          const i = gz * w + gx;
+          const x0 = minBx + gx * step, x1 = x0 + step;
+          const topY = sy[i];
+          const r = rgb[i * 3], g = rgb[i * 3 + 1], b = rgb[i * 3 + 2];
+          const em = emit[i], wa = water[i];
+
+          // Top face (gentle AO check against taller neighbors)
+          const hN = gz > 0 ? sy[i - w] : topY;
+          const hS = gz + 1 < h ? sy[i + w] : topY;
+          const hW = gx > 0 ? sy[i - 1] : topY;
+          const hE = gx + 1 < w ? sy[i + 1] : topY;
+          let topShade = 1.0;
+          if (hN > topY || hW > topY) topShade -= 0.08;
+          if (hS > topY || hE > topY) topShade -= 0.06;
+          pushQuad(x0,topY,z0, x0,topY,z1, x1,topY,z1, x1,topY,z0, r,g,b, topShade, topShade, em, wa);
+
+          // Exposed side walls (N, S, W, E)
+          const floorMin = baseY;
+          if (topY > hN) {
+            const bot = Math.max(floorMin, hN);
+            pushQuad(x1,topY,z0, x1,bot,z0, x0,bot,z0, x0,topY,z0, r,g,b, 0.86, 0.56, em, wa);
+          }
+          if (topY > hS) {
+            const bot = Math.max(floorMin, hS);
+            pushQuad(x0,topY,z1, x0,bot,z1, x1,bot,z1, x1,topY,z1, r,g,b, 0.92, 0.62, em, wa);
+          }
+          if (topY > hW) {
+            const bot = Math.max(floorMin, hW);
+            pushQuad(x0,topY,z0, x0,bot,z0, x0,bot,z1, x0,topY,z1, r,g,b, 0.78, 0.50, em, wa);
+          }
+          if (topY > hE) {
+            const bot = Math.max(floorMin, hE);
+            pushQuad(x1,topY,z1, x1,bot,z1, x1,bot,z0, x1,topY,z0, r,g,b, 0.72, 0.46, em, wa);
+          }
+        }
+      }
+      flushBatch();
+      voxelState.batches = batches;
+    }
+
+    function renderWebGLVoxel(cssW, cssH, nowSec) {
+      if (!glReady || !progVoxel) return null;
+      ensureVoxelMesh();
+
+      glCanvas.style.background = nightMode
+        ? "linear-gradient(180deg, #020617 0%, #0b1630 58%, #172554 100%)"
+        : "linear-gradient(180deg, #2563eb 0%, #60a5fa 45%, #bae6fd 100%)";
+
+      const dist = camVoxel.dist;
+      const horiz = dist * Math.cos(camVoxel.pitch);
+      const eyeX = camVoxel.x + Math.sin(camVoxel.yaw) * horiz;
+      const eyeY = camVoxel.y + dist * Math.sin(camVoxel.pitch);
+      const eyeZ = camVoxel.z + Math.cos(camVoxel.yaw) * horiz;
+
+      const proj = mat4Perspective(46 * Math.PI / 180, cssW / cssH, 1.5, 1600.0);
+      const view = mat4LookAt([eyeX, eyeY, eyeZ], [camVoxel.x, camVoxel.y, camVoxel.z], [0, 1, 0]);
+      const mvp = mat4Mul(proj, view);
+
+      gl.viewport(0, 0, glCanvas.width, glCanvas.height);
+      gl.clearColor(0, 0, 0, 0);
+      gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+      gl.enable(gl.DEPTH_TEST);
+      gl.disable(gl.CULL_FACE);
+
+      gl.useProgram(progVoxel);
+      gl.uniformMatrix4fv(gl.getUniformLocation(progVoxel, "uMvp"), false, mvp);
+      gl.uniform3f(gl.getUniformLocation(progVoxel, "uCamPos"), eyeX, eyeY, eyeZ);
+      gl.uniform1f(gl.getUniformLocation(progVoxel, "uNightMode"), nightMode ? 1 : 0);
+      gl.uniform1f(gl.getUniformLocation(progVoxel, "uTime"), nowSec);
+
+      const aPos = gl.getAttribLocation(progVoxel, "aPos");
+      const aColor = gl.getAttribLocation(progVoxel, "aColor");
+      const aShade = gl.getAttribLocation(progVoxel, "aShade");
+      const aFlags = gl.getAttribLocation(progVoxel, "aFlags");
+      const stride = 36;
+
+      for (const batch of voxelState.batches) {
+        gl.bindBuffer(gl.ARRAY_BUFFER, batch.vb);
+        gl.enableVertexAttribArray(aPos);
+        gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, stride, 0);
+        gl.enableVertexAttribArray(aColor);
+        gl.vertexAttribPointer(aColor, 3, gl.FLOAT, false, stride, 12);
+        gl.enableVertexAttribArray(aShade);
+        gl.vertexAttribPointer(aShade, 1, gl.FLOAT, false, stride, 24);
+        gl.enableVertexAttribArray(aFlags);
+        gl.vertexAttribPointer(aFlags, 2, gl.FLOAT, false, stride, 28);
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, batch.ib);
+        gl.drawElements(gl.TRIANGLES, batch.count, gl.UNSIGNED_SHORT, 0);
+      }
+      return { mode: "voxel", mvp };
     }
 
     // ---------------- WebGL Render Passes ----------------
@@ -1923,6 +2342,9 @@
     function drawProjectedOverlays(cssW, cssH, nowSec, viewInfo) {
       if (!viewInfo) return;
       const projFn = (cx, cz, elevChunks = 4) => {
+        if (viewMode === "voxel") {
+          return projectPointMat4(viewInfo.mvp, (cx + 0.5) * 16, 72 + elevChunks * 2.5, (cz + 0.5) * 16, cssW, cssH);
+        }
         if (viewMode === "25d") {
           return projectPointMat4(viewInfo.mvp, cx + 0.5, elevChunks, cz + 0.5, cssW, cssH);
         }
@@ -1930,7 +2352,7 @@
       };
 
       // Diplomacy arcs above 3D mountains / globe
-      if (layers.diplomacy) {
+      if (layers.diplomacy && viewMode !== "voxel") {
         const drawn = new Set();
         for (const c of state.countries || []) {
           const a = getCountryCenter(c);
@@ -2021,7 +2443,9 @@
         for (const p of state.players || []) {
           const px = p.x ?? p.bx ?? (p.cx * 16 + 8);
           const pz = p.z ?? p.bz ?? (p.cz * 16 + 8);
-          const pt = projFn(px / 16, pz / 16, 7.0 * reliefMult);
+          const pt = viewMode === "voxel"
+            ? projectPointMat4(viewInfo.mvp, px, 76, pz, cssW, cssH)
+            : projFn(px / 16, pz / 16, 7.0 * reliefMult);
           if (pt) drawPlayerPin(pt.x, pt.y, p);
         }
       }
@@ -2284,13 +2708,20 @@
       ovCanvas.setPointerCapture(e.pointerId);
       dragStart = { x: e.clientX, y: e.clientY };
       dragMoved = false;
-      if (viewMode === "25d" && (e.button === 2 || e.button === 1 || e.shiftKey)) {
+      if ((viewMode === "25d" || viewMode === "voxel") && (e.button === 2 || e.button === 1 || e.shiftKey)) {
         dragMode = "orbit";
       } else {
         dragMode = "pan";
       }
       ovCanvas.classList.add("dragging");
     });
+
+    window.addEventListener("keydown", e => {
+      if (e.target && (e.target.tagName === "INPUT" || e.target.tagName === "SELECT" || e.target.tagName === "TEXTAREA")) return;
+      keysDown.add(e.code);
+    });
+    window.addEventListener("keyup", e => keysDown.delete(e.code));
+    window.addEventListener("blur", () => keysDown.clear());
 
     ovCanvas.addEventListener("pointermove", e => {
       updateHoverHud(e.clientX, e.clientY);
@@ -2305,6 +2736,16 @@
         cam2d.targetCz -= dy / cam2d.zoom;
         cam2d.cx = cam2d.targetCx;
         cam2d.cz = cam2d.targetCz;
+      } else if (viewMode === "voxel") {
+        if (dragMode === "orbit") {
+          camVoxel.targetYaw -= dx * 0.0065;
+          camVoxel.targetPitch = Math.max(0.08, Math.min(1.42, camVoxel.targetPitch + dy * 0.0055));
+        } else {
+          const spd = Math.max(0.25, camVoxel.dist * 0.0032);
+          const cy = Math.cos(camVoxel.yaw), sy = Math.sin(camVoxel.yaw);
+          camVoxel.targetX += (-dx * cy - dy * sy) * spd;
+          camVoxel.targetZ += (dx * sy - dy * cy) * spd;
+        }
       } else if (viewMode === "25d") {
         if (dragMode === "orbit") {
           cam25.targetYaw -= dx * 0.0065;
@@ -2415,16 +2856,27 @@
                 <span>⚑ ${city.chunksCount || 0} ч.</span>
               </div>
             </div>
-            <div class="row-gdp">
+            <div class="row-gdp" style="display:flex;flex-direction:column;align-items:flex-end;gap:3px;">
               <div>${Number(city.blockDensity || 0).toFixed(1)} бл/ч</div>
-              <div style="font-size:10px;color:var(--green);font-weight:600">${fmtMoney(city.hourlyGdp || 0)}/ч</div>
+              <button class="btn" style="padding:1px 6px;font-size:10px;border-color:rgba(56,189,248,0.5);color:#7dd3fc;" data-city3d="${idx}">🧊 3D</button>
             </div>
           </div>`;
         }).join("");
         box.querySelectorAll(".country-row").forEach(el => {
-          el.addEventListener("click", () => {
+          el.addEventListener("click", (ev) => {
+            if (ev.target.closest("[data-city3d]")) return;
             if (el.dataset.cid) selectCountry(el.dataset.cid, false);
             focusWorldChunk(Number(el.dataset.cx), Number(el.dataset.cz));
+          });
+        });
+        box.querySelectorAll("[data-city3d]").forEach(btn => {
+          btn.addEventListener("click", (ev) => {
+            ev.stopPropagation();
+            const city = list[Number(btn.dataset.city3d)];
+            if (city) {
+              selectCountry(city.countryId, false);
+              openCityInVoxel3D(city);
+            }
           });
         });
       } else if (activeTab === "players") {
@@ -2531,9 +2983,9 @@
           <div class="stat-box"><div class="stat-label">Валюта</div><div class="stat-val">${esc(c.currencySymbol || "")} ${esc(c.currencyCode || "")}</div></div>
           <div class="stat-box"><div class="stat-label">Рейтинг / Туристы</div><div class="stat-val">★ ${Number(c.rating || 0).toFixed(1)} (${c.visitors || 0})</div></div>
         </div>
-        ${countryCities.length ? `<div><div class="section-title">Города (${countryCities.length})</div><div class="chip-wrap">${countryCities.map(ct => {
+        ${countryCities.length ? `<div><div class="section-title">Города (${countryCities.length})</div><div class="chip-wrap">${countryCities.map((ct, idx) => {
           const pt = ct.spawn || (ct.claims?.length >= 2 ? { cx: ct.claims[0], cz: ct.claims[1] } : null);
-          return `<span class="chip" style="border-color:rgba(251,191,36,0.45);background:rgba(251,191,36,0.12);color:#fde68a;" data-city-cx="${pt ? pt.cx : 0}" data-city-cz="${pt ? pt.cz : 0}">🏙 ${esc(ct.name)} (${ct.placedBlocks || 0} бл · ${Number(ct.blockDensity || 0).toFixed(0)} бл/ч · ${fmtMoney(ct.hourlyGdp || 0)}/ч)</span>`;
+          return `<span class="chip" style="border-color:rgba(251,191,36,0.45);background:rgba(251,191,36,0.12);color:#fde68a;display:inline-flex;align-items:center;gap:5px;" data-city-cx="${pt ? pt.cx : 0}" data-city-cz="${pt ? pt.cz : 0}">🏙 ${esc(ct.name)} (${ct.placedBlocks || 0} бл · ${Number(ct.blockDensity || 0).toFixed(0)} бл/ч) <b style="color:#7dd3fc;padding-left:3px;" data-d3d="${idx}" title="Открыть в воксельном 3D">🧊 3D</b></span>`;
         }).join("")}</div></div>` : ""}
         ${c.alliance ? `<div><div class="section-title">Альянс</div><span class="chip ally">🛡 ${esc(c.alliance)}</span></div>` : ""}
         ${c.wonders?.length ? `<div><div class="section-title">Чудеса света</div><div class="chip-wrap">${c.wonders.map(w => `<span class="chip wonder">🏛 ${esc(w)}</span>`).join("")}</div></div>` : ""}
@@ -2547,7 +2999,16 @@
         });
       });
       document.getElementById("dossierBody").querySelectorAll(".chip[data-city-cx]").forEach(el => {
-        el.addEventListener("click", () => focusWorldChunk(Number(el.dataset.cityCx), Number(el.dataset.cityCz)));
+        el.addEventListener("click", (ev) => {
+          if (ev.target.closest("[data-d3d]")) return;
+          focusWorldChunk(Number(el.dataset.cityCx), Number(el.dataset.cityCz));
+        });
+      });
+      document.getElementById("dossierBody").querySelectorAll("[data-d3d]").forEach(el => {
+        el.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          openCityInVoxel3D(countryCities[Number(el.dataset.d3d)]);
+        });
       });
     }
 
@@ -2591,17 +3052,21 @@
       updateHudVisibility();
     });
     document.getElementById("tiltDownBtn").addEventListener("click", () => {
-      cam25.targetPitch = Math.max(0.24, cam25.targetPitch - 0.14);
+      if (viewMode === "voxel") camVoxel.targetPitch = Math.max(0.08, camVoxel.targetPitch - 0.14);
+      else cam25.targetPitch = Math.max(0.24, cam25.targetPitch - 0.14);
     });
     document.getElementById("tiltUpBtn").addEventListener("click", () => {
-      cam25.targetPitch = Math.min(1.36, cam25.targetPitch + 0.14);
+      if (viewMode === "voxel") camVoxel.targetPitch = Math.min(1.42, camVoxel.targetPitch + 0.14);
+      else cam25.targetPitch = Math.min(1.36, cam25.targetPitch + 0.14);
     });
     document.getElementById("rotLeftBtn").addEventListener("click", () => {
-      if (viewMode === "25d") cam25.targetYaw -= 0.45;
+      if (viewMode === "voxel") camVoxel.targetYaw -= 0.45;
+      else if (viewMode === "25d") cam25.targetYaw -= 0.45;
       else { cam3d.autoSpin = false; cam3d.targetYaw -= 0.5; updateHudVisibility(); }
     });
     document.getElementById("rotRightBtn").addEventListener("click", () => {
-      if (viewMode === "25d") cam25.targetYaw += 0.45;
+      if (viewMode === "voxel") camVoxel.targetYaw += 0.45;
+      else if (viewMode === "25d") cam25.targetYaw += 0.45;
       else { cam3d.autoSpin = false; cam3d.targetYaw += 0.5; updateHudVisibility(); }
     });
     document.getElementById("reliefBtn").addEventListener("click", () => {
@@ -2641,6 +3106,24 @@
       cam25.yaw += (cam25.targetYaw - cam25.yaw) * k;
       cam25.pitch += (cam25.targetPitch - cam25.pitch) * k;
 
+      if (viewMode === "voxel" && keysDown.size) {
+        const moveSpd = (keysDown.has("ShiftLeft") || keysDown.has("ShiftRight") ? 140 : 68) * dt;
+        const fwdX = -Math.sin(camVoxel.yaw), fwdZ = -Math.cos(camVoxel.yaw);
+        const rightX = Math.cos(camVoxel.yaw), rightZ = -Math.sin(camVoxel.yaw);
+        if (keysDown.has("KeyW") || keysDown.has("ArrowUp")) { camVoxel.targetX += fwdX * moveSpd; camVoxel.targetZ += fwdZ * moveSpd; }
+        if (keysDown.has("KeyS") || keysDown.has("ArrowDown")) { camVoxel.targetX -= fwdX * moveSpd; camVoxel.targetZ -= fwdZ * moveSpd; }
+        if (keysDown.has("KeyD") || keysDown.has("ArrowRight")) { camVoxel.targetX += rightX * moveSpd; camVoxel.targetZ += rightZ * moveSpd; }
+        if (keysDown.has("KeyA") || keysDown.has("ArrowLeft")) { camVoxel.targetX -= rightX * moveSpd; camVoxel.targetZ -= rightZ * moveSpd; }
+        if (keysDown.has("Space") || keysDown.has("KeyE")) { camVoxel.targetY = Math.min(220, camVoxel.targetY + 45 * dt); }
+        if (keysDown.has("KeyC") || keysDown.has("KeyQ")) { camVoxel.targetY = Math.max(50, camVoxel.targetY - 45 * dt); }
+      }
+      camVoxel.x += (camVoxel.targetX - camVoxel.x) * k;
+      camVoxel.y += (camVoxel.targetY - camVoxel.y) * k;
+      camVoxel.z += (camVoxel.targetZ - camVoxel.z) * k;
+      camVoxel.yaw += (camVoxel.targetYaw - camVoxel.yaw) * k;
+      camVoxel.pitch += (camVoxel.targetPitch - camVoxel.pitch) * k;
+      camVoxel.dist += (camVoxel.targetDist - camVoxel.dist) * k;
+
       if (viewMode === "3d" && cam3d.autoSpin && !dragMode) {
         cam3d.targetYaw += dt * 0.065;
       }
@@ -2652,6 +3135,8 @@
       if (viewMode === "25d") {
         viewInfo = renderWebGL25D(cssW, cssH, nowSec);
         last25View = viewInfo;
+      } else if (viewMode === "voxel") {
+        viewInfo = renderWebGLVoxel(cssW, cssH, nowSec);
       } else if (viewMode === "3d") {
         viewInfo = renderWebGL3D(cssW, cssH, nowSec);
       }
