@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="ru">
 <head>
   <meta charset="UTF-8" />
@@ -216,11 +216,15 @@
 
     <div class="bar-group">
       <button class="btn active" data-layer="territories">Страны</button>
+      <button class="btn active" data-layer="cities">🏙 Города</button>
       <button class="btn active" data-layer="borders">Границы</button>
       <button class="btn active" data-layer="diplomacy">Дипломатия</button>
       <button class="btn active" data-layer="capitals">Столицы</button>
+      <button class="btn" data-layer="heatmap" title="Тепловая карта ВВП по плотности блоков">🔥 ВВП-карта</button>
+      <button class="btn" data-layer="resources" title="Месторождения нефти, золота, урана и руд">💎 Ресурсы</button>
       <button class="btn active" data-layer="players">Игроки</button>
       <button class="btn" data-layer="grid">Сетка чанков</button>
+      <button class="btn" id="nightModeBtn" title="Ночной режим с огнями городов">🌙 Ночь</button>
       <button class="btn" id="resetViewBtn">Весь мир</button>
       <button class="btn" id="refreshNowBtn" title="Обновить данные сейчас">⟳ Обновить</button>
       <button class="btn" id="pauseBtn">⏸ Пауза</button>
@@ -239,6 +243,7 @@
   <aside class="sidebar" id="sidebar">
     <div class="tabs">
       <button class="tab-btn active" data-tab="countries">Страны</button>
+      <button class="tab-btn" data-tab="cities">Города</button>
       <button class="tab-btn" data-tab="players">Игроки</button>
       <button class="tab-btn" data-tab="chronicle">Хроника мира</button>
     </div>
@@ -361,12 +366,19 @@
 
     const layers = {
       territories: true,
+      cities: true,
       borders: true,
       diplomacy: true,
       capitals: true,
+      heatmap: false,
+      resources: false,
       players: true,
       grid: false
     };
+    let nightMode = false;
+    const chunkCityMap = new Map();
+    const chunkEmbassyMap = new Map();
+    let maxCityDensity = 1;
 
     // Camera state for 2D
     const cam2d = { cx: 36, cz: -46, zoom: 3.4, targetCx: 36, targetCz: -46, targetZoom: 3.4 };
@@ -582,6 +594,7 @@
         uniform float uShowCountries;
         uniform float uShowBorders;
         uniform float uShowGrid;
+        uniform float uNightMode;
         uniform float uTime;
         varying vec2 vUv;
         varying float vRawH;
@@ -625,12 +638,19 @@
 
           // Country overlay & crisp territory borders on 3D terrain
           vec4 cSample = texture2D(uCountryTex, vUv);
+          if (uNightMode > 0.5) {
+            lit *= vec3(0.16, 0.22, 0.36);
+            if (cSample.a > 0.01) {
+              float cityGlow = smoothstep(0.35, 0.95, cSample.a);
+              lit += mix(cSample.rgb, vec3(1.0, 0.80, 0.34), 0.62) * (0.28 + cityGlow * 0.55);
+            }
+          }
           if (cSample.a > 0.01) {
             float isBorder = step(0.85, cSample.a);
             if (isBorder > 0.5 && uShowBorders > 0.5) {
               lit = mix(lit, cSample.rgb * 1.25 + vec3(0.1), 0.9);
             } else if (uShowCountries > 0.5) {
-              lit = mix(lit, cSample.rgb, 0.34);
+              lit = mix(lit, cSample.rgb, uNightMode > 0.5 ? 0.42 : 0.34);
             }
           }
 
@@ -689,6 +709,7 @@
         uniform float uSeaNorm;
         uniform float uShowCountries;
         uniform float uShowBorders;
+        uniform float uNightMode;
         uniform float uTime;
         varying vec3 vNormal;
         varying vec2 vUv;
@@ -721,12 +742,19 @@
             lit += vec3(0.32, 0.68, 0.98) * (spec * 0.42 + rim * 0.16);
           }
           vec4 cSample = texture2D(uCountryTex, vUv);
+          if (uNightMode > 0.5) {
+            lit *= vec3(0.16, 0.22, 0.36);
+            if (cSample.a > 0.01) {
+              float cityGlow = smoothstep(0.35, 0.95, cSample.a);
+              lit += mix(cSample.rgb, vec3(1.0, 0.80, 0.34), 0.65) * (0.28 + cityGlow * 0.55);
+            }
+          }
           if (cSample.a > 0.01) {
             float isBorder = step(0.85, cSample.a);
             if (isBorder > 0.5 && uShowBorders > 0.5) {
               lit = mix(lit, cSample.rgb * 1.25 + vec3(0.1), 0.9);
             } else if (uShowCountries > 0.5) {
-              lit = mix(lit, cSample.rgb, 0.35);
+              lit = mix(lit, cSample.rgb, uNightMode > 0.5 ? 0.42 : 0.35);
             }
           }
           lit += vec3(0.24, 0.64, 1.0) * rim * 0.48;
@@ -1034,16 +1062,31 @@
       uploadTexture(texHeight, synthHeightCanvas);
     }
 
+    function heatRgb(t) {
+      const x = Math.max(0, Math.min(1, t));
+      if (x < 0.35) {
+        const u = x / 0.35;
+        return [Math.round(37 + (6 - 37) * u), Math.round(99 + (182 - 99) * u), Math.round(235 + (212 - 235) * u)];
+      }
+      if (x < 0.7) {
+        const u = (x - 0.35) / 0.35;
+        return [Math.round(6 + (250 - 6) * u), Math.round(182 + (204 - 182) * u), Math.round(212 + (21 - 212) * u)];
+      }
+      const u = (x - 0.7) / 0.3;
+      return [Math.round(250 + (239 - 250) * u), Math.round(204 + (68 - 204) * u), Math.round(21 + (68 - 21) * u)];
+    }
+
     function rebuildCountryOverlayTexture() {
       const cw = WORLD_W * 2;
       const ch = WORLD_H * 2;
       countryOverlayCtx.clearRect(0, 0, cw, ch);
-      if (!layers.territories && !layers.borders) {
+      if (!layers.territories && !layers.borders && !layers.heatmap) {
         uploadTexture(texCountry, countryOverlayCanvas);
         return;
       }
       const img = countryOverlayCtx.createImageData(cw, ch);
       const data = img.data;
+      const maxGdp = Math.max(1, ...(state.countries || []).map(c => c.hourlyGdp || 0));
 
       for (const [k, owner] of chunkOwnerMap.entries()) {
         const [cx, cz] = k.split(",").map(Number);
@@ -1057,10 +1100,19 @@
         const wSame = chunkOwnerMap.get((cx - 1) + "," + cz)?.id === owner.id;
         const eSame = chunkOwnerMap.get((cx + 1) + "," + cz)?.id === owner.id;
 
-        const hex = (owner.color || "#38bdf8").replace("#", "");
-        const cr = parseInt(hex.slice(0, 2), 16) || 120;
-        const cg = parseInt(hex.slice(2, 4), 16) || 180;
-        const cb = parseInt(hex.slice(4, 6), 16) || 255;
+        const emb = chunkEmbassyMap.get(k);
+        const city = chunkCityMap.get(k);
+        let cr, cg, cb;
+        if (layers.heatmap) {
+          let t = city ? Math.max(city.placedBlocks > 0 ? 0.18 : 0.05, (city.blockDensity || 0) / maxCityDensity)
+                       : Math.min(0.45, ((owner.hourlyGdp || 0) / maxGdp) * 0.45);
+          [cr, cg, cb] = heatRgb(t);
+        } else {
+          const hex = ((emb ? emb.ownerColor : owner.color) || "#38bdf8").replace("#", "");
+          cr = parseInt(hex.slice(0, 2), 16) || 120;
+          cg = parseInt(hex.slice(2, 4), 16) || 180;
+          cb = parseInt(hex.slice(4, 6), 16) || 255;
+        }
 
         for (let sy = 0; sy < 2; sy++) {
           for (let sx = 0; sx < 2; sx++) {
@@ -1071,11 +1123,11 @@
               data[p + 1] = Math.min(255, cg + (isSel ? 65 : 35));
               data[p + 2] = Math.min(255, cb + (isSel ? 65 : 35));
               data[p + 3] = 245;
-            } else if (layers.territories) {
+            } else if (layers.territories || layers.heatmap) {
               data[p] = cr;
               data[p + 1] = cg;
               data[p + 2] = cb;
-              data[p + 3] = isSel ? 170 : 120;
+              data[p + 3] = layers.heatmap ? 195 : (isSel ? 170 : 120);
             }
           }
         }
@@ -1332,12 +1384,28 @@
 
     function rebuildIndex() {
       chunkOwnerMap.clear();
+      chunkCityMap.clear();
+      chunkEmbassyMap.clear();
       countryById.clear();
       for (const c of state.countries || []) {
         countryById.set(c.id, c);
         forEachCountryClaim(c, (cx, cz) => {
           chunkOwnerMap.set(cx + "," + cz, c);
         });
+      }
+      maxCityDensity = 1;
+      for (const city of state.cities || []) {
+        maxCityDensity = Math.max(maxCityDensity, city.blockDensity || 0);
+        const arr = city.claims || [];
+        for (let i = 0; i + 1 < arr.length; i += 2) {
+          chunkCityMap.set(arr[i] + "," + arr[i + 1], city);
+        }
+      }
+      for (const emb of state.embassies || []) {
+        const arr = emb.claims || [];
+        for (let i = 0; i + 1 < arr.length; i += 2) {
+          chunkEmbassyMap.set(arr[i] + "," + arr[i + 1], emb);
+        }
       }
       if (selectedCountryId && !countryById.has(selectedCountryId)) {
         selectedCountryId = null;
@@ -1499,6 +1567,7 @@
       gl.uniform1f(gl.getUniformLocation(progTerrain25, "uShowCountries"), layers.territories ? 1 : 0);
       gl.uniform1f(gl.getUniformLocation(progTerrain25, "uShowBorders"), layers.borders ? 1 : 0);
       gl.uniform1f(gl.getUniformLocation(progTerrain25, "uShowGrid"), layers.grid ? 1 : 0);
+      gl.uniform1f(gl.getUniformLocation(progTerrain25, "uNightMode"), nightMode ? 1 : 0);
       gl.uniform1f(gl.getUniformLocation(progTerrain25, "uTime"), nowSec);
 
       gl.drawElements(gl.TRIANGLES, meshTerrain25.count, gl.UNSIGNED_SHORT, 0);
@@ -1561,6 +1630,7 @@
       gl.uniform1f(gl.getUniformLocation(progGlobe3, "uSeaNorm"), SEA_NORM);
       gl.uniform1f(gl.getUniformLocation(progGlobe3, "uShowCountries"), layers.territories ? 1 : 0);
       gl.uniform1f(gl.getUniformLocation(progGlobe3, "uShowBorders"), layers.borders ? 1 : 0);
+      gl.uniform1f(gl.getUniformLocation(progGlobe3, "uNightMode"), nightMode ? 1 : 0);
       gl.uniform1f(gl.getUniformLocation(progGlobe3, "uTime"), nowSec);
 
       gl.drawElements(gl.TRIANGLES, meshGlobe3.count, gl.UNSIGNED_SHORT, 0);
@@ -1654,11 +1724,17 @@
         }
       }
 
+      // Night tint in 2D
+      if (nightMode) {
+        ovCtx.fillStyle = "rgba(4, 9, 24, 0.56)";
+        ovCtx.fillRect(0, 0, cssW, cssH);
+      }
+
       // Territories & crisp vector borders in 2D
-      if (layers.territories) {
+      if (layers.territories || layers.heatmap) {
         ovCtx.save();
         ovCtx.imageSmoothingEnabled = false;
-        ovCtx.globalAlpha = 0.72;
+        ovCtx.globalAlpha = layers.heatmap ? 0.85 : 0.72;
         ovCtx.drawImage(countryOverlayCanvas, worldLeft, worldTop, worldPxW, worldPxH);
         ovCtx.restore();
       }
@@ -1713,6 +1789,15 @@
         drawDiplomacyLines2D(ox, oz);
       }
 
+      // Resource deposits in 2D
+      if (layers.resources) {
+        for (const r of state.resourceClusters || []) {
+          const sx = ox + (r.cx + 0.5) * cam2d.zoom;
+          const sz = oz + (r.cz + 0.5) * cam2d.zoom;
+          drawResourcePin(sx, sz, r, cam2d.zoom >= 2.8);
+        }
+      }
+
       // Capitals & names
       if (layers.capitals) {
         for (const c of state.countries || []) {
@@ -1720,7 +1805,27 @@
           if (!pt) continue;
           const sx = ox + (pt.cx + 0.5) * cam2d.zoom;
           const sz = oz + (pt.cz + 0.5) * cam2d.zoom;
+          if (nightMode) drawCityLightGlow(sx, sz, 26);
           drawCountryBadge(sx, sz, c);
+        }
+      }
+
+      // Cities & Embassies in 2D
+      if (layers.cities) {
+        for (const city of state.cities || []) {
+          const pt = city.spawn || (city.claims?.length >= 2 ? { cx: city.claims[0], cz: city.claims[1] } : null);
+          if (!pt) continue;
+          const sx = ox + (pt.cx + 0.5) * cam2d.zoom;
+          const sz = oz + (pt.cz + 0.5) * cam2d.zoom;
+          if (nightMode) drawCityLightGlow(sx, sz, Math.min(44, 16 + Math.sqrt(city.blockDensity || 0) * 1.6));
+          drawCityBadge(sx, sz, city);
+        }
+        for (const emb of state.embassies || []) {
+          const pt = emb.spawn || (emb.claims?.length >= 2 ? { cx: emb.claims[0], cz: emb.claims[1] } : null);
+          if (!pt) continue;
+          const sx = ox + (pt.cx + 0.5) * cam2d.zoom;
+          const sz = oz + (pt.cz + 0.5) * cam2d.zoom;
+          drawEmbassyBadge(sx, sz, emb);
         }
       }
 
@@ -1824,6 +1929,14 @@
         }
       }
 
+      // Resource deposits
+      if (layers.resources) {
+        for (const r of state.resourceClusters || []) {
+          const pt = projFn(r.cx, r.cz, 5.5 * reliefMult);
+          if (pt) drawResourcePin(pt.x, pt.y, r, viewMode === "25d" ? cam25.zoom >= 1.8 : cam3d.zoom >= 1.9);
+        }
+      }
+
       // Capitals
       if (layers.capitals) {
         const items = [];
@@ -1835,7 +1948,27 @@
         }
         items.sort((a, b) => b.pt.depth - a.pt.depth);
         for (const { c, pt } of items) {
+          if (nightMode) drawCityLightGlow(pt.x, pt.y, 24);
           drawCountryBadge(pt.x, pt.y, c);
+        }
+      }
+
+      // Cities & Embassies
+      if (layers.cities) {
+        for (const city of state.cities || []) {
+          const cPt = city.spawn || (city.claims?.length >= 2 ? { cx: city.claims[0], cz: city.claims[1] } : null);
+          if (!cPt) continue;
+          const pt = projFn(cPt.cx, cPt.cz, 7.5 * reliefMult);
+          if (pt) {
+            if (nightMode) drawCityLightGlow(pt.x, pt.y, Math.min(40, 14 + Math.sqrt(city.blockDensity || 0) * 1.4));
+            drawCityBadge(pt.x, pt.y, city);
+          }
+        }
+        for (const emb of state.embassies || []) {
+          const ePt = emb.spawn || (emb.claims?.length >= 2 ? { cx: emb.claims[0], cz: emb.claims[1] } : null);
+          if (!ePt) continue;
+          const pt = projFn(ePt.cx, ePt.cz, 6.5 * reliefMult);
+          if (pt) drawEmbassyBadge(pt.x, pt.y, emb);
         }
       }
 
@@ -1847,6 +1980,92 @@
           const pt = projFn(px / 16, pz / 16, 7.0 * reliefMult);
           if (pt) drawPlayerPin(pt.x, pt.y, p);
         }
+      }
+    }
+
+    function drawCityLightGlow(sx, sy, radius) {
+      ovCtx.save();
+      const grad = ovCtx.createRadialGradient(sx, sy, 1, sx, sy, radius);
+      grad.addColorStop(0, "rgba(253, 224, 71, 0.72)");
+      grad.addColorStop(0.45, "rgba(245, 158, 11, 0.28)");
+      grad.addColorStop(1, "rgba(245, 158, 11, 0)");
+      ovCtx.fillStyle = grad;
+      ovCtx.beginPath();
+      ovCtx.arc(sx, sy, radius, 0, Math.PI * 2);
+      ovCtx.fill();
+      ovCtx.restore();
+    }
+
+    function drawCityBadge(sx, sy, city) {
+      ovCtx.save();
+      ovCtx.beginPath();
+      ovCtx.arc(sx, sy, 4, 0, Math.PI * 2);
+      ovCtx.fillStyle = "#fbbf24";
+      ovCtx.fill();
+      ovCtx.lineWidth = 1.5;
+      ovCtx.strokeStyle = "#0f172a";
+      ovCtx.stroke();
+      const label = "🏙 " + city.name;
+      ovCtx.font = '600 10.5px Inter, "Segoe UI", sans-serif';
+      const w = ovCtx.measureText(label).width;
+      ovCtx.fillStyle = "rgba(15, 23, 42, 0.82)";
+      ovCtx.beginPath();
+      ovCtx.roundRect(sx - w / 2 - 5, sy + 6, w + 10, 15, 4);
+      ovCtx.fill();
+      ovCtx.fillStyle = "#fde68a";
+      ovCtx.textAlign = "center";
+      ovCtx.textBaseline = "middle";
+      ovCtx.fillText(label, sx, sy + 13.5);
+      ovCtx.restore();
+    }
+
+    function drawEmbassyBadge(sx, sy, emb) {
+      ovCtx.save();
+      ovCtx.beginPath();
+      ovCtx.rect(sx - 3.5, sy - 3.5, 7, 7);
+      ovCtx.fillStyle = emb.ownerColor || "#38bdf8";
+      ovCtx.fill();
+      ovCtx.lineWidth = 1.5;
+      ovCtx.strokeStyle = "#ffffff";
+      ovCtx.stroke();
+      const label = "🏛 " + emb.ownerCountryName;
+      ovCtx.font = '600 10px Inter, "Segoe UI", sans-serif';
+      const w = ovCtx.measureText(label).width;
+      ovCtx.fillStyle = "rgba(15, 23, 42, 0.84)";
+      ovCtx.beginPath();
+      ovCtx.roundRect(sx - w / 2 - 4, sy - 19, w + 8, 14, 4);
+      ovCtx.fill();
+      ovCtx.fillStyle = "#bae6fd";
+      ovCtx.textAlign = "center";
+      ovCtx.textBaseline = "middle";
+      ovCtx.fillText(label, sx, sy - 12);
+      ovCtx.restore();
+    }
+
+    function drawResourcePin(sx, sy, r, showLabel) {
+      ovCtx.save();
+      ovCtx.translate(sx, sy);
+      ovCtx.rotate(Math.PI / 4);
+      ovCtx.fillStyle = r.color || "#facc15";
+      ovCtx.fillRect(-3.5, -3.5, 7, 7);
+      ovCtx.lineWidth = 1.2;
+      ovCtx.strokeStyle = "#0f172a";
+      ovCtx.strokeRect(-3.5, -3.5, 7, 7);
+      ovCtx.restore();
+      if (showLabel) {
+        ovCtx.save();
+        ovCtx.font = '600 9.5px Inter, "Segoe UI", sans-serif';
+        const txt = r.label || r.resource;
+        const w = ovCtx.measureText(txt).width;
+        ovCtx.fillStyle = "rgba(10, 15, 30, 0.78)";
+        ovCtx.beginPath();
+        ovCtx.roundRect(sx - w / 2 - 4, sy + 6, w + 8, 13, 3);
+        ovCtx.fill();
+        ovCtx.fillStyle = r.color || "#facc15";
+        ovCtx.textAlign = "center";
+        ovCtx.textBaseline = "middle";
+        ovCtx.fillText(txt, sx, sy + 12.5);
+        ovCtx.restore();
       }
     }
 
@@ -2121,6 +2340,39 @@
         box.querySelectorAll(".country-row").forEach(el => {
           el.addEventListener("click", () => selectCountry(el.dataset.cid, true));
         });
+      } else if (activeTab === "cities") {
+        const list = [...(state.cities || [])].sort((a, b) =>
+          (b.blockDensity || 0) - (a.blockDensity || 0) || (b.placedBlocks || 0) - (a.placedBlocks || 0)
+        );
+        if (!list.length) {
+          box.innerHTML = `<div style="padding:16px;color:var(--muted);font-size:12px;">Города ещё не основаны (/c city create).</div>`;
+          return;
+        }
+        box.innerHTML = list.map((city, idx) => {
+          const pt = city.spawn || (city.claims?.length >= 2 ? { cx: city.claims[0], cz: city.claims[1] } : null);
+          return `
+          <div class="country-row" data-cx="${pt ? pt.cx : 0}" data-cz="${pt ? pt.cz : 0}" data-cid="${esc(city.countryId)}">
+            <div class="swatch" style="background:${esc(city.color || "#fbbf24")}"></div>
+            <div class="row-main">
+              <div class="row-title">#${idx + 1} 🏙 ${esc(city.name)}</div>
+              <div class="row-sub">
+                <span>${esc(city.countryName || "")}</span>
+                <span>🧱 ${city.placedBlocks || 0} бл.</span>
+                <span>⚑ ${city.chunksCount || 0} ч.</span>
+              </div>
+            </div>
+            <div class="row-gdp">
+              <div>${Number(city.blockDensity || 0).toFixed(1)} бл/ч</div>
+              <div style="font-size:10px;color:var(--green);font-weight:600">${fmtMoney(city.hourlyGdp || 0)}/ч</div>
+            </div>
+          </div>`;
+        }).join("");
+        box.querySelectorAll(".country-row").forEach(el => {
+          el.addEventListener("click", () => {
+            if (el.dataset.cid) selectCountry(el.dataset.cid, false);
+            focusWorldChunk(Number(el.dataset.cx), Number(el.dataset.cz));
+          });
+        });
       } else if (activeTab === "players") {
         const list = state.players || [];
         if (!list.length) {
@@ -2241,8 +2493,14 @@
         const k = btn.dataset.layer;
         layers[k] = !layers[k];
         btn.classList.toggle("active", layers[k]);
-        if (k === "territories" || k === "borders") rebuildCountryOverlayTexture();
+        if (k === "territories" || k === "borders" || k === "heatmap") rebuildCountryOverlayTexture();
       });
+    });
+    document.getElementById("nightModeBtn").addEventListener("click", () => {
+      nightMode = !nightMode;
+      const btn = document.getElementById("nightModeBtn");
+      btn.classList.toggle("active", nightMode);
+      btn.textContent = nightMode ? "☀ День" : "🌙 Ночь";
     });
     document.querySelectorAll(".tab-btn").forEach(btn => {
       btn.addEventListener("click", () => {
